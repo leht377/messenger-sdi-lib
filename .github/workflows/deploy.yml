@@ -1,0 +1,66 @@
+name: Build and Deploy to lib branch
+
+on:
+  workflow_dispatch: # Se ejecuta únicamente de forma manual desde GitHub
+    inputs:
+      source_branch:
+        description: 'Rama origen desde donde compilar'
+        required: true
+        default: 'dev'
+
+jobs:
+  release-lib:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source_branch }}
+          fetch-depth: 0
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Compilar librería
+        run: npm run build
+
+      - name: Publicar en la rama lib
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 1. Guardar dist, package.json y README.md en una carpeta temporal
+          mkdir -p /tmp/release-assets
+          cp -r dist /tmp/release-assets/
+          cp package.json README.md /tmp/release-assets/
+
+          # 2. Cambiar a la rama lib (o crearla si no existiera)
+          git checkout -B lib origin/lib 2>/dev/null || git checkout --orphan lib
+
+          # 3. Limpiar archivos antiguos si se requiere
+          git rm -rf . 2>/dev/null || true
+
+          # 4. Restaurar dist, package.json y README.md
+          cp -r /tmp/release-assets/dist ./
+          cp /tmp/release-assets/package.json ./
+          cp /tmp/release-assets/README.md ./
+
+          # 5. Agregar dist forzosamente y archivos requeridos
+          git add -f dist package.json README.md
+
+          # 6. Commit y push si hay cambios
+          if ! git diff --staged --quiet; then
+            git commit -m "build: update lib branch from ${{ github.event.inputs.source_branch }} [skip ci]"
+            git push origin lib
+          else
+            echo "No se detectaron cambios en dist ni en los archivos de la rama lib."
+          fi
