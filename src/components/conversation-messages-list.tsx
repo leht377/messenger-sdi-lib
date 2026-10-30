@@ -4,12 +4,14 @@ import React from 'react'
 import { ChevronsDown, Loader2 } from 'lucide-react'
 import { ScrollArea, Skeleton } from '../ui'
 import type { Conversation } from '../types/conversation.types'
-import type { ConversationMessage, Message } from '../types/message.types'
+import type { ConversationMessage, Message, MessageActionButton } from '../types/message.types'
 import { ConversationMessageItem } from './conversation-message-item'
 import {
   getConversationName,
   getConversationUser,
-  isGroupConversation
+  isGroupConversation,
+  isUserBot,
+  isConversationBot
 } from '../utils/conversation.util'
 import { formatDisplayDate } from '../utils/message.util'
 import { useChatContext } from '../context/chat-context'
@@ -26,6 +28,7 @@ interface ConversationMessagesListProps {
   newMessagesCount?: number
   visibleDate?: string
   onScrollToBottom?: () => void
+  onActionClick?: (action: MessageActionButton) => void
 }
 
 export function ConversationMessagesList({
@@ -39,12 +42,14 @@ export function ConversationMessagesList({
   isNearBottom = true,
   newMessagesCount = 0,
   visibleDate = 'Hoy',
-  onScrollToBottom
+  onScrollToBottom,
+  onActionClick
 }: ConversationMessagesListProps) {
   const { currentUserId } = useChatContext()
   const isGroup = isGroupConversation(conversation)
   const conversationName = getConversationName(conversation, currentUserId)
   const conversationUser = getConversationUser(conversation, currentUserId)
+  const isBotConversation = isConversationBot(conversation, currentUserId) || isUserBot(conversationUser)
   const historyMessageIds = new Set(
     messages.flatMap((messageGroup) => messageGroup.messages.map((message) => message.id))
   )
@@ -148,6 +153,8 @@ export function ConversationMessagesList({
                       isGroup={isGroup}
                       conversationName={conversationName}
                       conversationAvatarUrl={conversationUser?.attributes.avatar_url || undefined}
+                      isBot={isBotConversation}
+                      onActionClick={onActionClick}
                     />
                   </div>
                 )
@@ -174,6 +181,8 @@ export function ConversationMessagesList({
                     isGroup={isGroup}
                     conversationName={conversationName}
                     conversationAvatarUrl={conversationUser?.attributes.avatar_url || undefined}
+                    isBot={isBotConversation}
+                    onActionClick={onActionClick}
                   />
                 </div>
               ))}

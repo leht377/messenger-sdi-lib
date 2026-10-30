@@ -13,6 +13,18 @@ export interface MessageAttachment {
   relationships: []
 }
 
+export interface MessageActionButton {
+  id: string
+  label: string
+  action: string
+}
+
+export interface MessageMetadata {
+  state?: string
+  action_buttons?: MessageActionButton[]
+  [key: string]: unknown
+}
+
 export interface MessageType {
   id: number
   name: string
@@ -27,6 +39,7 @@ export interface Message {
     sender_id: number
     body: string
     type: MessageType | null
+    metadata?: MessageMetadata
     updated_at: string
   }>
   relationships: {

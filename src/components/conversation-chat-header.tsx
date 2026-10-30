@@ -7,12 +7,14 @@ import {
   Button,
   cn
 } from '../ui'
-import { Info, ArrowLeft, Lock } from 'lucide-react'
+import { Info, ArrowLeft, Lock, Sparkles } from 'lucide-react'
 import type { Conversation } from '../types/conversation.types'
 import {
   getConversationName,
   getConversationUser,
-  isGroupConversation
+  isGroupConversation,
+  isUserBot,
+  isConversationBot
 } from '../utils/conversation.util'
 import { BtnCloseConversation } from './btn-close-conversation'
 import { useChatContext } from '../context/chat-context'
@@ -50,6 +52,7 @@ export function ConversationChatHeader({
   const isGroup = isGroupConversation(conversation)
   const conversationName = getConversationName(conversation, currentUserId)
   const conversationUser = getConversationUser(conversation, currentUserId)
+  const isBot = isConversationBot(conversation, currentUserId) || isUserBot(conversationUser)
 
   return (
     <div className='flex shrink-0 items-center justify-between gap-2 border-b border-neutral-200 dark:border-neutral-800 p-2 sm:p-3 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xs min-w-0'>
@@ -75,6 +78,7 @@ export function ConversationChatHeader({
           src={conversationUser?.attributes.avatar_url}
           name={conversationName}
           isGroup={isGroup}
+          isBot={isBot}
           size='md'
           className='shrink-0'
         />
@@ -87,6 +91,12 @@ export function ConversationChatHeader({
             >
               {conversationName}
             </h3>
+            {isBot && (
+              <span className='inline-flex items-center gap-1 rounded-full bg-violet-100 dark:bg-violet-950/70 px-1.5 py-0.2 text-[9.5px] font-semibold text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-800/40 shrink-0 shadow-2xs'>
+                <Sparkles className='size-2.5 text-violet-600 dark:text-violet-400' />
+                <span>Asistente IA</span>
+              </span>
+            )}
             {isClosed && (
               <Badge
                 variant='destructive'
@@ -102,6 +112,8 @@ export function ConversationChatHeader({
             <span className='truncate'>
               {isGroup
                 ? `${conversation.relationships?.users?.length || 0} participantes`
+                : isBot
+                ? 'Asistente virtual automatizado'
                 : 'Conversación individual'}
             </span>
           </div>

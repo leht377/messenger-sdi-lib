@@ -78,10 +78,12 @@ const ConversationItem = ({
   onSelectConversation: (id: string) => void
 }) => {
   const isGroup = isGroupConversation(conversation)
-  const isBot =
-    (conversation as any).type === 'bot' || (conversation.attributes as any)?.type === 'bot'
-  const isClosed = Boolean(conversation.attributes.closed_at)
   const userConversation = getConversationUser(conversation, currentUserId)
+  const isBot =
+    (conversation as any).type === 'bot' ||
+    (conversation.attributes as any)?.type === 'bot' ||
+    Number(userConversation?.attributes?.user_auth_id) === 0
+  const isClosed = Boolean(conversation.attributes.closed_at)
   const conversationName = getConversationName(conversation, currentUserId)
   const participantCount = conversation.relationships?.users?.length || 0
 
@@ -115,6 +117,7 @@ const ConversationItem = ({
           src={userConversation?.attributes.avatar_url}
           name={conversationName}
           isGroup={isGroup}
+          isBot={isBot}
           size='md'
           className='shrink-0'
         />
@@ -125,6 +128,11 @@ const ConversationItem = ({
               <h4 className='truncate text-xs font-bold text-neutral-900 dark:text-neutral-100'>
                 {conversationName}
               </h4>
+              {isBot && (
+                <span className='inline-flex items-center gap-0.5 rounded-full bg-violet-100 dark:bg-violet-950/70 px-1 py-0.2 text-[9px] font-semibold text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-800/40 shrink-0 shadow-2xs'>
+                  IA
+                </span>
+              )}
               {isGroup && (
                 <span className='text-[10px] text-neutral-400 font-normal shrink-0'>
                   ({participantCount})

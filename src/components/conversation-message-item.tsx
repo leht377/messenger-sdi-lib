@@ -2,8 +2,8 @@
 
 import React from 'react'
 import { Avatar, cn } from '../ui'
-import { CheckCheck, Clock, Download, FileText } from 'lucide-react'
-import type { Message, MessageAttachment } from '../types/message.types'
+import { CheckCheck, Clock, Download, FileText, Sparkles } from 'lucide-react'
+import type { Message, MessageAttachment, MessageActionButton } from '../types/message.types'
 import { capitalizeWords } from '../utils/conversation.util'
 
 interface ConversationMessageItemProps {
@@ -12,6 +12,8 @@ interface ConversationMessageItemProps {
   isGroup: boolean
   conversationName: string
   conversationAvatarUrl?: string
+  isBot?: boolean
+  onActionClick?: (action: MessageActionButton) => void
 }
 
 function formatMessageTime(dateStr?: string | null): string {
@@ -30,8 +32,14 @@ export function ConversationMessageItem({
   isOwnMessage,
   isGroup,
   conversationName,
-  conversationAvatarUrl
+  conversationAvatarUrl,
+  isBot = false,
+  onActionClick
 }: ConversationMessageItemProps) {
+  const isSenderBot =
+    Boolean(isBot) ||
+    Number(message.relationships?.sender?.attributes?.user_auth_id) === 0
+  const actionButtons = message.attributes?.metadata?.action_buttons ?? []
   const senderName = capitalizeWords(message.relationships?.sender?.attributes?.name || conversationName)
   const senderAvatar = message.relationships?.sender?.attributes?.avatar_url || undefined
   const hoursAgo = formatMessageTime(message.attributes.created_at)
@@ -48,6 +56,7 @@ export function ConversationMessageItem({
         <Avatar
           name={senderName}
           src={senderAvatar}
+          isBot={isSenderBot}
           size='sm'
           className='mt-0.5 shrink-0'
         />
@@ -55,19 +64,37 @@ export function ConversationMessageItem({
         <Avatar
           name={conversationName}
           src={conversationAvatarUrl}
+          isBot={isSenderBot}
           size='sm'
           className='mt-0.5 shrink-0'
         />
       ) : null}
       <div className={cn('flex min-w-0 flex-col gap-1', isOwnMessage && 'items-end')}>
-        <span className='text-xs font-semibold text-neutral-800 dark:text-neutral-200 truncate'>
-          {isOwnMessage ? 'Tú' : senderName}
-        </span>
+        <div className='flex items-center gap-1.5 min-w-0'>
+          <span
+            className={cn(
+              'text-xs font-semibold truncate',
+              isSenderBot && !isOwnMessage
+                ? 'text-violet-700 dark:text-violet-300 font-bold'
+                : 'text-neutral-800 dark:text-neutral-200'
+            )}
+          >
+            {isOwnMessage ? 'Tú' : senderName}
+          </span>
+          {isSenderBot && !isOwnMessage && (
+            <span className='inline-flex items-center gap-0.5 rounded-full bg-violet-100 dark:bg-violet-950/80 px-1.5 py-0.2 text-[9.5px] font-semibold text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-800/50 shadow-2xs'>
+              <Sparkles className='size-2.5 text-violet-600 dark:text-violet-400' />
+              <span>IA</span>
+            </span>
+          )}
+        </div>
         <div
           className={cn(
             'rounded-2xl px-3.5 py-2.5 shadow-xs text-xs sm:text-sm leading-relaxed break-words',
             isOwnMessage
               ? 'rounded-tr-xs bg-blue-600 text-white shadow-xs'
+              : isSenderBot
+              ? 'rounded-tl-xs bg-gradient-to-b from-violet-50/70 to-white dark:from-neutral-800/90 dark:to-neutral-900/90 text-neutral-900 dark:text-neutral-100 border border-violet-200/70 dark:border-violet-800/50 shadow-xs ring-1 ring-violet-500/10'
               : 'rounded-tl-xs bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 border border-neutral-200/80 dark:border-neutral-700/60 shadow-xs'
           )}
         >
@@ -110,6 +137,23 @@ export function ConversationMessageItem({
           {message.attributes.body && attachments.length > 0 && message.attributes.body !== 'Archivo adjunto' && (
             <p className='whitespace-pre-wrap break-words mt-1'>{message.attributes.body}</p>
           )}
+
+          {/* Botones de acción del bot / IA */}
+          {isSenderBot && !isOwnMessage && actionButtons.length > 0 && (
+            <div className='mt-2.5 pt-2 border-t border-violet-200/60 dark:border-violet-800/40 flex flex-wrap gap-1.5'>
+              {actionButtons.map((btn) => (
+                <button
+                  key={btn.id}
+                  type='button'
+                  onClick={() => onActionClick?.(btn)}
+                  className='inline-flex items-center gap-1.5 rounded-lg border border-violet-200 dark:border-violet-700/60 bg-white/95 dark:bg-neutral-800/90 hover:bg-violet-600 hover:text-white dark:hover:bg-violet-600 dark:hover:text-white hover:border-violet-600 dark:hover:border-violet-600 px-2.5 py-1.5 text-xs font-semibold text-violet-700 dark:text-violet-300 shadow-2xs transition-all active:scale-95 cursor-pointer'
+                >
+                  <span>{btn.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className='mt-1 flex items-center justify-end gap-1 text-[10px] leading-none'>
             <time
               dateTime={message.attributes.created_at}

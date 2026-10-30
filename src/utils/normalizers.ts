@@ -84,6 +84,7 @@ export function toMessageEnvelope(data: unknown): Message {
       sender_id: Number(record.sender_id),
       body: toString(record.body),
       type: toMessageType(record.type),
+      metadata: (record.metadata as any) ?? undefined,
       created_at: toString(record.created_at),
       updated_at: toString(record.updated_at)
     },

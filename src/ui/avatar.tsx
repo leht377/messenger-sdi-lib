@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react'
 import { cn } from './cn'
-import { Users } from 'lucide-react'
+import { Users, Bot } from 'lucide-react'
 
 export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
 
@@ -11,6 +11,7 @@ export interface AvatarProps extends React.HTMLAttributes<HTMLDivElement> {
   name?: string | null
   size?: AvatarSize
   isGroup?: boolean
+  isBot?: boolean
   status?: 'online' | 'offline' | 'busy'
 }
 
@@ -46,6 +47,7 @@ export function Avatar({
   name = '',
   size = 'md',
   isGroup = false,
+  isBot = false,
   status,
   className,
   ...props
@@ -53,8 +55,8 @@ export function Avatar({
   const [imageError, setImageError] = useState(false)
 
   const sizeClasses: Record<AvatarSize, { box: string; text: string; icon: string; statusDot: string }> = {
-    xs: { box: 'size-6', text: 'text-[10px]', icon: 'size-3', statusDot: 'size-1.5' },
-    sm: { box: 'size-8', text: 'text-xs', icon: 'size-3.5', statusDot: 'size-2' },
+    xs: { box: 'size-6', text: 'text-[10px]', icon: 'size-3.5', statusDot: 'size-1.5' },
+    sm: { box: 'size-8', text: 'text-xs', icon: 'size-4', statusDot: 'size-2' },
     md: { box: 'size-10', text: 'text-sm', icon: 'size-5', statusDot: 'size-2.5' },
     lg: { box: 'size-12', text: 'text-base', icon: 'size-6', statusDot: 'size-3' },
     xl: { box: 'size-16', text: 'text-xl', icon: 'size-8', statusDot: 'size-3.5' }
@@ -71,9 +73,11 @@ export function Avatar({
       <div
         className={cn(
           'flex size-full items-center justify-center overflow-hidden rounded-full font-semibold shadow-xs select-none',
-          !hasValidImage && (isGroup ? 'bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300' : 'font-semibold text-xs')
+          isBot && !hasValidImage
+            ? 'bg-gradient-to-tr from-violet-600 via-indigo-600 to-purple-600 text-white shadow-violet-500/25 ring-1 ring-violet-400/30'
+            : !hasValidImage && (isGroup ? 'bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300' : 'font-semibold text-xs')
         )}
-        style={!hasValidImage && !isGroup ? {
+        style={!hasValidImage && !isGroup && !isBot ? {
           backgroundColor: `${colorHex}33`,
           color: `${colorHex}FF`,
           fontWeight: 'bold'
@@ -87,6 +91,8 @@ export function Avatar({
             className='size-full object-cover'
             loading='lazy'
           />
+        ) : isBot ? (
+          <Bot className={icon} />
         ) : isGroup ? (
           <Users className={icon} />
         ) : (

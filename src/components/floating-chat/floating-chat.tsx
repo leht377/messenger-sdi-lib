@@ -8,13 +8,15 @@ import { SupportNoTechnicianView } from '../support-no-technician-view'
 import { NewConversationDialog } from '../new-conversation-dialog'
 import useConversationsPage from '../../hooks/use-conversations-page'
 import useRequestChatSupport from '../../hooks/api/use-request-chat-support'
+import useCreateConversation from '../../hooks/api/conversations/use-create-conversation'
 import { useChatContext } from '../../context/chat-context'
 import { activeConversationStore } from '../../context/active-conversation-context'
 import { useCheckHasPermissionMessenger } from '../../hooks/use-check-has-permission-messenger'
 import type { Conversation } from '../../types/conversation.types'
 import type {
   RequestChatSupportPayload,
-  RequestChatSupportResponse
+  RequestChatSupportResponse,
+  EscalateChatSupportResponse
 } from '../../types/chat-support.types'
 import type { UserChat } from '../../types/user-chat.types'
 import type { FloatingChatProps, FloatingChatView } from './types'
@@ -30,6 +32,7 @@ import { FloatingChatErrorView } from './components/floating-chat-error-view'
 export function FloatingChat({
   canViewChatList = true,
   canRequestSupport = true,
+  canChatWithBot = true,
   defaultView = 'home',
   defaultCorner = 'bottom-right',
   initialConversation,
@@ -64,6 +67,7 @@ export function FloatingChat({
 
   const effectiveCanViewChatList = canViewChatList && hasReadChat
   const effectiveCanRequestSupport = canRequestSupport && hasRequestSupport
+  const effectiveCanChatWithBot = canChatWithBot
 
   // Hook de visibilidad condicional por ruta
   const { shouldHide } = useFloatingChatVisibility({
@@ -97,7 +101,7 @@ export function FloatingChat({
 
   // Contextos de usuario
   const { currentUser, isLoadingUser, hasError, error: chatError } = useChatContext()
-  const resolvedUserId = currentUser?.attributes?.user_auth_id
+  const resolvedUserId = currentUser?.id
   const resolvedUserName = currentUser?.attributes?.name || 'Usuario'
 
   // Hook para solicitar chat-support
@@ -106,6 +110,35 @@ export function FloatingChat({
     isLoading: isSubmittingSupport,
     error: supportError
   } = useRequestChatSupport()
+
+  // Hook para iniciar conversación directa con bot
+  const {
+    mutateAsync: createConversation,
+    isLoading: isStartingBot
+  } = useCreateConversation()
+
+  const handleStartBotConversation = async () => {
+    try {
+      const newConv = await createConversation({
+        type: 'bot',
+        sender_id: resolvedUserId ? Number(resolvedUserId) : undefined,
+        user_id: resolvedUserId ? Number(resolvedUserId) : undefined,
+      })
+
+      if (newConv) {
+        setCustomActiveConversation(newConv)
+        handleConversationCreated(newConv)
+        toast.success('Conversación iniciada con el Asistente Virtual')
+        setCurrentView('chat')
+      }
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Error al iniciar conversación con el bot'
+      toast.error(errorMsg)
+    }
+  }
 
   // Estado para la respuesta cuando no hay técnico
   const [noTechResult, setNoTechResult] = useState<RequestChatSupportResponse | null>(null)
@@ -188,7 +221,7 @@ export function FloatingChat({
   }
 
   // Si la ruta lo oculta O el usuario no tiene ningún permiso de mensajería (y ya cargó)
-  if (shouldHide || (!isLoadingUser && !hasError && !hasAnyPermission)) {
+  if (shouldHide || (!isLoadingUser && !hasError && !hasAnyPermission && !effectiveCanChatWithBot)) {
     return null
   }
 
@@ -201,7 +234,7 @@ export function FloatingChat({
   // Manejador del envío del formulario de solicitud de asistencia
   const handleSubmitSupport = async (payload: RequestChatSupportPayload) => {
     try {
-      const response = await requestChatSupport(payload)
+      const response = await requestChatSupport({ ...payload, direct_technician: false })
 
       if (response?.conversation_id && response?.technician) {
         // Hay técnico disponible: Creamos o asociamos la conversación y entramos a chat
@@ -255,6 +288,54 @@ export function FloatingChat({
     }
   }
 
+  // Manejador del resultado de escalar a un técnico desde el chat de IA
+  const handleEscalateSuccess = (response: EscalateChatSupportResponse) => {
+    if (response?.conversation_id && response?.technician) {
+      const convId = String(response.conversation_id)
+      const techUser: UserChat = {
+        id: String(response.technician.id),
+        type: 'user',
+        attributes: {
+          user_auth_id: Number(response.technician.user_auth_id),
+          name: response.technician.name,
+          avatar_url: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        relationships: []
+      }
+
+      const newConv: Conversation = {
+        id: convId,
+        type: 'conversation',
+        attributes: {
+          is_group: false,
+          name: response.technician.name || (response.ticket as any)?.subject || 'Soporte SDI',
+          closed_at: null,
+          unread_count: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        relationships: {
+          users: [techUser]
+        }
+      }
+
+      setCustomActiveConversation(newConv)
+      handleConversationCreated(newConv)
+      toast.success(`Asistencia iniciada con ${response.technician.name}`, {
+        description: `Ticket #${response.ticket?.number || response.ticket?.id}`
+      })
+      setCurrentView('chat')
+    } else {
+      setNoTechResult(response as any)
+      toast.info(response.message || 'Ticket creado en Helpdesk', {
+        description: `Ticket #${response.ticket?.number || response.ticket?.id}`
+      })
+      setCurrentView('no-technician')
+    }
+  }
+
   if (shouldHide) {
     return null
   }
@@ -304,10 +385,13 @@ export function FloatingChat({
                   title={title}
                   canRequestSupport={effectiveCanRequestSupport}
                   canViewChatList={effectiveCanViewChatList}
+                  canChatWithBot={effectiveCanChatWithBot}
+                  isStartingBot={isStartingBot}
                   totalUnreadCount={totalUnreadCount}
                   conversationsCount={conversations.length}
                   onRequestSupport={() => setCurrentView('support-form')}
                   onViewChatList={() => setCurrentView('list')}
+                  onStartBotConversation={handleStartBotConversation}
                   onClose={() => setIsOpen(false)}
                   onNewConversation={() => setIsNewConversationOpen(true)}
                   onDragStart={startDrag}
@@ -378,6 +462,7 @@ export function FloatingChat({
                     isContextPanelOpen={false}
                     alwaysShowBackButton={true}
                     renderOptions={renderOptions}
+                    onEscalateSuccess={handleEscalateSuccess}
                     onCloseSuccess={() => {
                       setCustomActiveConversation(null)
                       if (effectiveCanViewChatList) {

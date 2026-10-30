@@ -52,6 +52,11 @@ export {
   type NewConversationDialogProps
 } from './components/new-conversation-dialog'
 
+export {
+  EscalateSupportDialog,
+  type EscalateSupportDialogProps
+} from './components/escalate-support-dialog'
+
 export { RequestSupportForm, type RequestSupportFormProps } from './components/request-support-form'
 
 // 3. Hooks Principales (para vistas embebidas personalizadas)
@@ -60,6 +65,7 @@ export {
   type UseConversationsPageOptions
 } from './hooks/use-conversations-page'
 export { default as useConversationChat } from './hooks/use-conversation-chat'
+export { default as useEscalateChatSupport } from './hooks/api/use-escalate-chat-support'
 export {
   default as useShowConversation,
   type UseShowConversationOptions
@@ -86,6 +92,8 @@ export type {
   Message,
   MessageAttachment,
   MessageType,
+  MessageActionButton,
+  MessageMetadata,
   CreateMessagePayload,
   UploadMessageFilePayload
 } from './types/message.types'
@@ -94,7 +102,9 @@ export type { UserChat } from './types/user-chat.types'
 
 export type {
   RequestChatSupportPayload,
-  RequestChatSupportResponse
+  RequestChatSupportResponse,
+  EscalateChatSupportPayload,
+  EscalateChatSupportResponse
 } from './types/chat-support.types'
 
 // 5. Constantes & Utilidades

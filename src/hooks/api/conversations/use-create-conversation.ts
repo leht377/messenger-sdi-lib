@@ -8,14 +8,15 @@ import { Conversation, CreateConversationPayload } from '../../../types/conversa
 const useCreateConversation = () => {
   const createConversation = useCallback(async (payload: CreateConversationPayload) => {
     const response = await createConversationService(payload)
-    if (typeof window !== 'undefined') {
+    const conv = (response.data as any)?.data ?? response.data
+    if (typeof window !== 'undefined' && conv) {
       window.dispatchEvent(
         new CustomEvent('messenger:conversation-created', {
-          detail: { conversation: response.data.data }
+          detail: { conversation: conv }
         })
       )
     }
-    return response.data.data
+    return conv as Conversation
   }, [])
 
   return useMutate<Conversation, AxiosError<ResponseError>, CreateConversationPayload>(

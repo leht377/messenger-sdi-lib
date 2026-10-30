@@ -53,3 +53,18 @@ export const getConversationName = (
   const rawName = otherUser?.attributes?.name || conversation.attributes.name || 'Usuario'
   return capitalizeWords(rawName)
 }
+
+export const isUserBot = (user?: UserChat | null): boolean => {
+  if (!user?.attributes) return false
+  return Number(user.attributes.user_auth_id) === 0
+}
+
+export const isConversationBot = (
+  conversation: Conversation,
+  currentUserId?: string | number
+): boolean => {
+  if (conversation.attributes?.is_group) return false
+  const otherUser = getConversationUser(conversation, currentUserId)
+  return isUserBot(otherUser)
+}
+

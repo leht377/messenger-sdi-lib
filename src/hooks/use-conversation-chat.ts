@@ -416,13 +416,13 @@ export const useConversationChat = (
     [isClosed]
   )
 
-  const handleSendMessage = async () => {
+  const handleSendMessage = async (customText?: string) => {
     if (isClosed) return
-    const caption = inputText.trim()
+    const caption = (typeof customText === 'string' ? customText : inputText).trim()
     if (!caption && !pendingFile) return
     if (!currentUser) return
 
-    const file = pendingFile
+    const file = typeof customText === 'string' ? null : pendingFile
     const optimisticMessage = createOptimisticMessage({
       conversationId: conversation.id,
       sender: currentUser,
@@ -432,7 +432,9 @@ export const useConversationChat = (
     const optimisticId = optimisticMessage.id
 
     setOptimisticMessages((current) => [...current, optimisticMessage])
-    setInputText('')
+    if (typeof customText !== 'string') {
+      setInputText('')
+    }
     if (outgoingTypingTimerRef.current) {
       clearTimeout(outgoingTypingTimerRef.current)
       outgoingTypingTimerRef.current = null

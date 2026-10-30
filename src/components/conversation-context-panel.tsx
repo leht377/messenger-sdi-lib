@@ -33,6 +33,7 @@ export function ConversationContextPanel({
   const { currentUserId } = useChatContext()
   const isGroup = isGroupConversation(conversation)
   const conversationUser = getConversationUser(conversation, currentUserId)
+  const isBot = Number(conversationUser?.attributes?.user_auth_id) === 0 || (conversation as any).type === 'bot'
   const conversationName = getConversationName(conversation, currentUserId)
   const participantCount = conversation.relationships?.users?.length || 0
   const isClosed = Boolean(conversation.attributes.closed_at)
@@ -84,18 +85,19 @@ export function ConversationContextPanel({
                   src={conversationUser?.attributes.avatar_url}
                   name={conversationName}
                   isGroup={isGroup}
+                  isBot={isBot}
                   size="xl"
-                  status={!isGroup && conversationUser ? 'online' : undefined}
+                  status={!isGroup && !isBot && conversationUser ? 'online' : undefined}
                 />
               </div>
 
               <h4 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">{conversationName}</h4>
               <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                {isGroup ? `${participantCount} participantes` : 'Conversación individual'}
+                {isGroup ? `${participantCount} participantes` : isBot ? 'Asistente virtual inteligente' : 'Conversación individual'}
               </p>
               <div className="flex items-center justify-center gap-1.5 mt-2">
-                <Badge variant="secondary" className="text-[10px]">
-                  {isGroup ? 'Grupo' : 'Usuario'}
+                <Badge variant={isBot ? "default" : "secondary"} className={cn("text-[10px]", isBot && "bg-violet-600 text-white")}>
+                  {isGroup ? 'Grupo' : isBot ? 'Asistente IA' : 'Usuario'}
                 </Badge>
                 {isClosed ? (
                   <Badge
