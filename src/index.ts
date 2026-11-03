@@ -63,10 +63,10 @@ export {
 } from './components/resolve-support-dialog'
 
 export {
-  MessageMarkdown,
+  MessageRichText,
   sanitizeUrl,
-  type MessageMarkdownProps
-} from './components/message-markdown'
+  type MessageRichTextProps
+} from './components/message-rich-text'
 
 export { RequestSupportForm, type RequestSupportFormProps } from './components/request-support-form'
 

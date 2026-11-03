@@ -3,7 +3,7 @@ import { Avatar, cn } from '../ui'
 import { CheckCheck, Clock, Download, FileText, Sparkles } from 'lucide-react'
 import type { Message, MessageAttachment, MessageActionButton } from '../types/message.types'
 import { capitalizeWords } from '../utils/conversation.util'
-import { MessageMarkdown } from './message-markdown'
+import { MessageRichText } from './message-rich-text'
 
 interface ConversationMessageItemProps {
   message: Message
@@ -133,7 +133,7 @@ export function ConversationMessageItem({
             )
           })}
           {message.attributes.body && attachments.length === 0 && (
-            <MessageMarkdown
+            <MessageRichText
               content={message.attributes.body}
               isOwnMessage={isOwnMessage}
               isBot={isSenderBot}
@@ -143,7 +143,7 @@ export function ConversationMessageItem({
             attachments.length > 0 &&
             message.attributes.body !== 'Archivo adjunto' && (
               <div className='mt-1'>
-                <MessageMarkdown
+                <MessageRichText
                   content={message.attributes.body}
                   isOwnMessage={isOwnMessage}
                   isBot={isSenderBot}

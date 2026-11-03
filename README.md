@@ -12,6 +12,8 @@ Librería de componentes React para mensajería y chat de soporte en tiempo real
 - **🎨 Aislamiento de Estilos Garantizado:** Todos los estilos CSS están encapsulados bajo el namespace `.sdi-messenger-root` con Tailwind CSS v4, evitando colisiones con los estilos o clases globales de tu app.
 - **🗺️ Detección de Rutas en Tiempo Real:** Detección instantánea de cambios de URL en SPAs (Next.js `<Link>`, `router.push`, React Router) para ocultar o mostrar el chat flotante dinámicamente sin recargar la página.
 - **🔊 Sistema de Sonidos Nativos:** Notificaciones auditivas mediante **Web Audio API** (sin descargas de archivos `.mp3`), con tonos diferenciados para conversaciones enfocadas vs. no enfocadas y protección anti-ráfagas.
+- **🤖 Asistente Virtual IA (Bot SDI) Integrado:** Creación automática de sesiones de triaje con IA, persistencia automática de `session_uuid` por conversación, botones de acción interactivos (`action_buttons`), escalamiento a técnico en vivo o cola de espera (`in_queue`) y modal de calificación por estrellas (1 a 5) al resolver tickets.
+- **📝 Renderizado y Editor de Texto Enriquecido (HTML WYSIWYG):** Soporte seguro (XSS-safe) en burbujas de mensaje para etiquetas HTML de texto enriquecido (`<b>`, `<strong>`, `<i>`, `<em>`, `<u>`, `<s>`, `<del>`, `<ul>`, `<ol>`, `<li>`, `<pre>`, `<code>`, `<table>`, `<blockquote>`, `<a href>`), bloques de código con botón de copiado y enlaces seguros, acompañado de un editor visual `contentEditable` en el compositor sin sintaxis Markdown.
 - **🔒 Bloqueo en Conversaciones Cerradas:** Deshabilita el compositor de texto/archivos con aviso visual de candado al interactuar con conversaciones finalizadas y sincroniza el estado automáticamente.
 - **💬 Vistas Flexibles:** Widget flotante completo (FAB) o componentes independientes para crear vistas a pantalla completa / paneles embebidos.
 
@@ -26,7 +28,7 @@ npm install https://github.com/Inverpacifico-desarrollo/messenger-sdi-lib.git#li
 
 ### Opción B: Desde paquete comprimido local (`.tgz`)
 ```bash
-npm install ../ruta-a/messenger-sdi-lib-1.2.2.tgz
+npm install ../ruta-a/messenger-sdi-lib-1.3.0.tgz
 ```
 
 ---
@@ -69,6 +71,7 @@ const chatConfig: ChatConfig = {
   apiBaseUrl: 'https://api.tu-servidor.com',
   authToken: 'TU_TOKEN_BEARER_DE_AUTENTICACION',
   applicationId: 10,
+  supportWithBot: true, // true (por defecto): "Solicitar Asistencia" inicia con el Bot IA | false: abre el formulario tradicional
   reverb: {
     key: 'tu-reverb-key',
     host: 'reverb.tu-servidor.com',
@@ -93,7 +96,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 ## 💬 3. Modos de Uso
 
 ### A. Widget Flotante (`<FloatingChat />`)
-Widget interactivo completo con botón flotante (FAB), lista de chats, soporte técnico y panel de conversación en tiempo real:
+Widget interactivo completo con botón flotante (FAB), lista de chats, soporte técnico con Bot IA o formulario y panel de conversación en tiempo real:
 
 ```tsx
 import { FloatingChat } from 'messenger-sdi-lib'
@@ -104,6 +107,7 @@ import { FloatingChat } from 'messenger-sdi-lib'
   defaultCorner="bottom-right"           // 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
   canViewChatList={true}
   canRequestSupport={true}
+  supportWithBot={true}                  // true (por defecto): inicia chat con Bot IA | false: abre formulario de soporte
   hiddenPaths={['/messenger', '/login']} // Ocultar automáticamente en estas rutas
   showToastOnUnread={false}             // Notificaciones toast (opcional)
 />
@@ -117,7 +121,8 @@ import { FloatingChat } from 'messenger-sdi-lib'
 | `defaultView` | `'home' \| 'list' \| 'chat' \| 'support-form'` | `'home'` | Vista inicial al abrir el chat. |
 | `defaultCorner` | `'bottom-right' \| 'bottom-left' \| 'top-right' \| 'top-left'` | `'bottom-right'` | Esquina inicial en pantalla. |
 | `canViewChatList` | `boolean` | `true` | Permite navegar por la lista de conversaciones. |
-| `canRequestSupport` | `boolean` | `true` | Permite solicitar tickets de soporte técnico. |
+| `canRequestSupport` | `boolean` | `true` | Permite solicitar asistencia técnica desde la vista de inicio. |
+| `supportWithBot` | `boolean` | `config.supportWithBot ?? true` | Define si el botón **"Solicitar Asistencia"** inicia una sesión con el Asistente Virtual Bot IA (`true`) o abre el formulario directo a técnico (`false`). |
 | `hiddenPaths` | `string[]` | `['/messenger']` | Rutas donde el chat se oculta automáticamente (ej: `['/messenger', '/admin/*']`). |
 | `showOnlyPaths` | `string[]` | `undefined` | Mostrar únicamente en las rutas especificadas. |
 | `hideCondition` | `(pathname: string) => boolean` | `undefined` | Callback booleano para evaluar dinámicamente si ocultar. |
@@ -530,7 +535,46 @@ const isAllowed = hasMessengerPermission(
 
 ---
 
-## 🔊 5. Notificaciones de Sonido
+## 🤖 5. Asistente Virtual IA (Bot SDI), Escalamiento y Resolución
+
+La librería integra de forma nativa el flujo completo de atención mediante el **Asistente Virtual de Soporte SDI**:
+
+1. **Inicio de Asistencia Unificado (`supportWithBot`)**:
+   - Por defecto (`supportWithBot: true` en `ChatConfig` o `<FloatingChat />`), el botón **"Solicitar Asistencia"** inicia directamente una sesión de diagnóstico con el Bot IA.
+   - Si configuras `supportWithBot: false`, el mismo botón abrirá el formulario tradicional de soporte (`<RequestSupportForm />`) sin perder su funcionalidad.
+2. **Persistencia Automática de `session_uuid`**:
+   - Cuando llega el evento WebSocket `MessageSent` con `metadata.session_uuid`, la librería asocia automáticamente ese `session_uuid` al `conversation_id` en `localStorage` (`saveConversationSessionId`, `getConversationSessionId`) y lo elimina cuando la conversación se cierra (`removeConversationSessionId`).
+3. **Botones de Acción Interactivos (`action_buttons`)**:
+   - Los botones enviados por el bot en `metadata.action_buttons` se muestran bajo la burbuja del mensaje.
+   - Sólo están habilitados en el **último mensaje** de la conversación para evitar reenvíos duplicados de acciones pasadas.
+4. **Escalamiento a Técnico (`EscalateSupportDialog` / `useEscalateChatSupport`)**:
+   - Envía `{ session_id, reason }` a `/api/v1/chat-bot/escalate`:
+     - **`status === "escalated_live"`**: transfiere y hace foco automáticamente en la nueva conversación (`conversation_id`) asignada con el técnico en vivo.
+     - **`status === "in_queue"`**: muestra en el modal la posición en la fila (`queue_position`), el tiempo estimado (`estimated_wait_minutes`), el mensaje informativo y los botones de decisión (ej. *"⏳ Continuar esperando en vivo"* o *"📝 Crear ticket y no esperar"*), enviando como mensaje la opción seleccionada.
+5. **Calificación y Resolución (`ResolveSupportDialog` / `useResolveChatSupport`)**:
+   - Al pulsar el botón de acción **"✅ Sí, solucionó mi problema"**, se abre un diálogo modal para calificar de **1 a 5 estrellas** y dejar un comentario opcional, enviando `{ session_id, helpful: true, comment, rating }` a `/api/v1/chat-bot/resolve` y dando por finalizada la conversación en estado Resuelto.
+
+---
+
+## 📝 6. Renderizado y Editor de Texto Enriquecido (HTML)
+
+### A. Renderizado de Etiquetas HTML en Burbujas (`<MessageRichText />`)
+Todos los mensajes (enviados, recibidos y del Bot IA) se procesan mediante un parser seguro de AST HTML hacia nodos de React (sin usar `dangerouslySetInnerHTML`):
+- **Etiquetas de estilo inline**: `<b>`, `<strong>` (negrita), `<i>`, `<em>` (cursiva), `<u>` (subrayado), `<s>`, `<strike>`, `<del>` (tachado) y `<a href="...">` (enlaces) además de autodetección de URLs en texto plano.
+- **Bloques de código (`CodeBlock`)**: Las etiquetas `<pre><code>...</code></pre>`, `<pre>...</pre>` y `<code>...</code>` se renderizan como bloques de código con cabecera y botón **Copiar** al portapapeles.
+- **Listas, Tablas y Estructuras**: Listas desordenadas (`<ul><li>`), listas numeradas (`<ol><li>`), tablas HTML (`<table>`, `<thead>`, `<tbody>`, `<tr>`, `<th>`, `<td>`), citas (`<blockquote>`), encabezados (`<h1>` a `<h6>`) y saltos/párrafos (`<p>`, `<div>`, `<br>`, `<hr>`).
+- **Seguridad de Enlaces (`sanitizeUrl`)**: Permite únicamente protocolos seguros (`http:`, `https:`, `mailto:`) con `target="_blank"` y `rel="noopener noreferrer"`, bloqueando `javascript:` o `data:`.
+
+### B. Editor Visual WYSIWYG con Barra de Formato (`ConversationComposer`)
+El compositor de mensajes incorpora un editor visual enriquecido (`contentEditable`) con un botón **`Aa`** para desplegar la barra de herramientas sin mostrar símbolos Markdown:
+- Botones directos que aplican formato en tiempo real con etiquetas HTML: **Negrita** (`<b>`), **Cursiva** (`<i>`), **Subrayado** (`<u>`), **Tachado** (`<s>`), **Lista de viñetas** (`<ul><li>`), **Lista numerada** (`<ol><li>`), **Código** (`<code>`) e **Insertar enlace** (`<a href="...">`).
+- **Indicadores de formato activo**: Cada botón se ilumina automáticamente cuando el cursor o la selección actual tiene aplicado ese estilo, y el icono **`Aa`** muestra un punto indicador activo.
+- **Atajos de teclado**: `Ctrl+B` / `Cmd+B` (negrita), `Ctrl+I` / `Cmd+I` (cursiva), `Ctrl+U` / `Cmd+U` (subrayado), `Ctrl+K` / `Cmd+K` (insertar enlace).
+- **Bloques de código en vivo**: Al pulsar el botón de código se inserta un bloque visual `<code>` directamente en el input; `Shift+Enter` añade saltos de línea dentro del código y volver a pulsar el botón (o flecha derecha) permite continuar escribiendo fuera del bloque.
+
+---
+
+## 🔊 7. Notificaciones de Sonido
 
 La librería incluye un sistema de notificaciones sonoras nativo (**Web Audio API**, sin dependencias de archivos `.mp3` externos):
 - **Tono Enfocado (`focused`)**: Tono suave cuando el usuario tiene la conversación abierta y visible en pantalla.
@@ -547,26 +591,31 @@ playNotificationSound('unfocused') // Tono de alerta
 
 ---
 
-## 🎛️ 6. Componentes, Hooks y Tipos Disponibles
+## 🎛️ 8. Componentes, Hooks y Tipos Disponibles
 
 ### Componentes Exportados:
 - `ChatProvider`: Proveedor de contexto y configuración del chat.
 - `ActiveConversationProvider`: Proveedor de contexto local para la conversación activa.
 - `FloatingChat`: Widget de chat flotante completo con soporte técnico y navegación.
-- `ConversationChatPanel`: Panel activo de mensajes, scroll infinito, cabecera y compositor multimedia.
+- `ConversationChatPanel`: Panel activo de mensajes, scroll infinito, cabecera y compositor multimedia enriquecido.
 - `ConversationChatHeader`: Cabecera independiente de la conversación con soporte para `renderOptions`.
 - `ConversationsSidebarList`: Lista lateral filtrable con pestañas (Todas, Directas, Grupos, Bot) y buscador.
 - `ConversationEmptyState`: Vista de estado vacío cuando no hay chat seleccionado.
 - `ConversationContextPanel`: Panel lateral con detalles y participantes de la conversación.
 - `NewConversationDialog`: Modal para iniciar conversaciones directas o grupales.
-- `RequestSupportForm`: Formulario para crear solicitudes de asistencia técnica.
+- `EscalateSupportDialog`: Modal para escalar conversación del Bot IA a técnico o gestionar la fila de espera (`in_queue`).
+- `ResolveSupportDialog`: Modal de calificación de 1 a 5 estrellas y comentarios para dar por resuelta la atención del Bot IA.
+- `MessageRichText`: Renderizador seguro de etiquetas HTML y texto enriquecido para mensajes.
+- `RequestSupportForm`: Formulario tradicional para crear solicitudes de asistencia técnica.
 
 ### Hooks Exportados:
 - `useActiveConversation`: Accede a la conversación activa actual (`conversation`, `isClosed`, `isClosing`, `handleCloseConversation`) tanto dentro de la cabecera como desde componentes externos.
 - `useRequiredActiveConversation`: Variante de `useActiveConversation` que asegura que el contexto esté presente.
 - `useCheckHasPermissionMessenger`: Hook para verificar si el usuario actual cuenta con permisos específicos en el chat.
 - `useCloseConversation`: Hook de mutación para cerrar cualquier conversación puntual por su ID desde cualquier parte de la app.
-- `useConversationsPage`: Gestiona estado de lista, filtros, búsqueda, selección y sincronización de mensajes no leídos.
+- `useEscalateChatSupport`: Hook de mutación para escalar una sesión del Bot IA a técnico (`/api/v1/chat-bot/escalate`).
+- `useResolveChatSupport`: Hook de mutación para calificar y resolver una sesión del Bot IA (`/api/v1/chat-bot/resolve`).
+- `useConversationsPage`: Gestiona estado de lista, filtros, búsqueda, selección, escalamiento y sincronización de mensajes no leídos.
 - `useConversationChat`: Gestiona mensajes, paginación hacia arriba, escritura en vivo (*typing*), archivos, optimismo y cierre de conversación.
 - `useShowConversation`: Consulta y suscripción a una conversación puntual por ID.
 - `useChatContext`: Acceso a la configuración activa y usuario autenticado.
@@ -576,22 +625,23 @@ playNotificationSound('unfocused') // Tono de alerta
 - `activeConversationStore`: Store reactivo global (`get()`, `set()`, `subscribe()`) para leer la conversación activa.
 - `hasMessengerPermission`: Función utilitaria para evaluar listas de permisos con operadores `'AND'` u `'OR'`.
 - `closeConversationService`: Función de servicio HTTP directa para cerrar conversaciones.
+- `saveConversationSessionId`, `getConversationSessionId`, `removeConversationSessionId`: Utilidades de almacenamiento local para gestionar el `session_uuid` asociado a cada conversación.
+- `sanitizeUrl`: Validador seguro de URLs (`http:`, `https:`, `mailto:`).
 - `playNotificationSound`: Reproductor de tonos de notificación con Web Audio API.
-- `LIB_VERSION`: Versión actual de la librería (`1.2.2`, inferida automáticamente desde `package.json`).
+- `LIB_VERSION`: Versión actual de la librería (`1.3.0`, inferida automáticamente desde `package.json`).
 
 ### Tipos e Interfaces Exportados:
 - **Conversaciones:** `Conversation`, `ConversationType`, `CreateConversationPayload`, `TypingEvent`, `UnreadEvent`.
-- **Mensajes:** `Message`, `MessageAttachment`, `MessageType`, `CreateMessagePayload`, `UploadMessageFilePayload`.
-- **Usuarios & Soporte:** `UserChat`, `RequestChatSupportPayload`, `RequestChatSupportResponse`.
+- **Mensajes:** `Message`, `MessageAttachment`, `MessageType`, `MessageActionButton`, `MessageMetadata`, `CreateMessagePayload`, `UploadMessageFilePayload`.
+- **Usuarios & Soporte / Bot IA:** `UserChat`, `RequestChatSupportPayload`, `RequestChatSupportResponse`, `EscalateChatSupportPayload`, `EscalateChatSupportResponse`, `ResolveChatSupportPayload`, `ResolveChatSupportResponse`.
 - **Permisos:** `PermissionsMessenger`, `CheckMessengerPermissionParams`, `PermissionOperator`.
 - **Cabecera & Personalización:** `ConversationChatHeaderRenderOptions`, `ConversationRenderOptions`, `ActiveConversationContextValue`, `ActiveConversationProviderProps`.
-- **Props de Componentes:** `FloatingChatProps`, `FloatingChatView`, `FloatingChatCorner`, `ConversationChatPanelProps`, `ConversationChatHeaderProps`, `ConversationsSidebarListProps`, `NewConversationDialogProps`, `RequestSupportFormProps`.
+- **Props de Componentes:** `FloatingChatProps`, `FloatingChatView`, `FloatingChatCorner`, `ConversationChatPanelProps`, `ConversationChatHeaderProps`, `ConversationsSidebarListProps`, `NewConversationDialogProps`, `EscalateSupportDialogProps`, `ResolveSupportDialogProps`, `MessageRichTextProps`, `RequestSupportFormProps`.
 - **Configuración & Contextos:** `ChatConfig`, `ChatContextValue`, `ChatProviderProps`.
-
 
 ---
 
-## 🌓 7. Modo Oscuro (Dark Mode)
+## 🌓 9. Modo Oscuro (Dark Mode)
 
 La librería detecta el modo oscuro automáticamente:
 1. Si el elemento `<html>` o `<body>` de tu app tiene la clase `dark`.
