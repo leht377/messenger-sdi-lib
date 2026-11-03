@@ -57,6 +57,11 @@ export {
   type EscalateSupportDialogProps
 } from './components/escalate-support-dialog'
 
+export {
+  ResolveSupportDialog,
+  type ResolveSupportDialogProps
+} from './components/resolve-support-dialog'
+
 export { RequestSupportForm, type RequestSupportFormProps } from './components/request-support-form'
 
 // 3. Hooks Principales (para vistas embebidas personalizadas)
@@ -66,6 +71,7 @@ export {
 } from './hooks/use-conversations-page'
 export { default as useConversationChat } from './hooks/use-conversation-chat'
 export { default as useEscalateChatSupport } from './hooks/api/use-escalate-chat-support'
+export { default as useResolveChatSupport } from './hooks/api/use-resolve-chat-support'
 export {
   default as useShowConversation,
   type UseShowConversationOptions
@@ -104,12 +110,19 @@ export type {
   RequestChatSupportPayload,
   RequestChatSupportResponse,
   EscalateChatSupportPayload,
-  EscalateChatSupportResponse
+  EscalateChatSupportResponse,
+  ResolveChatSupportPayload,
+  ResolveChatSupportResponse
 } from './types/chat-support.types'
 
 // 5. Constantes & Utilidades
 export { LIB_VERSION } from './utils/version'
 export { closeConversationService } from './services/conversation.services'
+export {
+  saveConversationSessionId,
+  getConversationSessionId,
+  removeConversationSessionId
+} from './utils/session-storage.util'
 export {
   playNotificationSound,
   type NotificationSoundType,

@@ -6,6 +6,7 @@ import {
   FilterConversation,
   MarkConversationAsReadPayload
 } from '../types/conversation.types'
+import { removeConversationSessionId } from '../utils/session-storage.util'
 
 export const listConversationsService = (params: FilterConversation) =>
   httpRequest<Conversation[]>({
@@ -49,9 +50,12 @@ export const updateConversationTypingService = ({
     data: { user_id, is_typing }
   })
 
-export const closeConversationService = (conversationId: string) =>
-  httpRequest<Conversation>({
-    url: `${chatApiUrl('messenger', 'v1')}/conversations/${conversationId}/close`,
-    method: 'POST'
-  })
+    export const closeConversationService = async (conversationId: string) => {
+      const response = await httpRequest<Conversation>({
+        url: `${chatApiUrl('messenger', 'v1')}/conversations/${conversationId}/close`,
+        method: 'POST'
+      })
+      removeConversationSessionId(conversationId)
+      return response
+    }
 

@@ -99,11 +99,11 @@ const ConversationItem = ({
     conversationDate = ''
   }
 
-  const isSelected = selectedId === conversation.id
+  const isSelected = String(selectedId) === String(conversation.id)
 
   return (
     <div
-      onClick={() => onSelectConversation(conversation.id)}
+      onClick={() => onSelectConversation(String(conversation.id))}
       aria-current={isSelected ? 'true' : undefined}
       className={cn(
         'group relative flex w-full min-w-0 cursor-pointer select-none flex-col gap-1.5 overflow-hidden rounded-xl p-3 transition-all',

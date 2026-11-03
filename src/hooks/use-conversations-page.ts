@@ -60,26 +60,35 @@ export const useConversationsPage = ({
   })
 
   const [selectedId, setSelectedId] = useState('')
+  const [fallbackConversation, setFallbackConversation] = useState<Conversation | null>(null)
   const [isContextPanelOpen, setIsContextPanelOpen] = useState(false)
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false)
   const [isNewConversationOpen, setIsNewConversationOpen] = useState(false)
 
   // Solo si la vista está visible/activa y la conversación coincide, aseguramos unread_count: 0
   const conversations = useMemo(() => {
-    if (!isActive || !selectedId) return rawConversations
-    return rawConversations.map((conv) => {
-      if (conv.id === selectedId && conv.attributes.unread_count > 0) {
-        return {
-          ...conv,
-          attributes: {
-            ...conv.attributes,
-            unread_count: 0
-          }
+        let list = rawConversations
+        if (
+          fallbackConversation &&
+          !rawConversations.some((conv) => String(conv.id) === String(fallbackConversation.id))
+        ) {
+          list = [fallbackConversation, ...rawConversations]
         }
-      }
-      return conv
-    })
-  }, [isActive, rawConversations, selectedId])
+
+        if (!isActive || !selectedId) return list
+        return list.map((conv) => {
+          if (String(conv.id) === String(selectedId) && conv.attributes.unread_count > 0) {
+            return {
+              ...conv,
+              attributes: {
+                ...conv.attributes,
+                unread_count: 0
+              }
+            }
+          }
+          return conv
+        })
+  }, [fallbackConversation, isActive, rawConversations, selectedId])
 
   const handleUnreadUpdate = useCallback(
     (event: UnreadEvent) => {
@@ -87,7 +96,7 @@ export const useConversationsPage = ({
         currentUserId && String(event.message.sender_id) !== String(currentUserId)
 
       const isFocused =
-        isActive && String(event.conversation_id) === selectedId
+      isActive && String(event.conversation_id) === String(selectedId)
 
       if (isFromOtherUser) {
         playNotificationSound(isFocused ? 'focused' : 'unfocused')
@@ -124,15 +133,39 @@ export const useConversationsPage = ({
       void refetchConversations()
     }
 
+    const handleCreated = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          conversationId?: string | number
+          conversation?: Conversation | null
+          focus?: boolean
+        }>
+      ).detail
+
+      if (detail?.conversationId) {
+        const targetId = String(detail.conversationId)
+        if (detail.conversation) {
+          setFallbackConversation(detail.conversation)
+        }
+        setClosedFilter('0')
+        setTypeFilter((prev) => (prev === 'all' || prev === 'direct' ? prev : 'all'))
+        setSearchQuery('')
+        setSelectedId(targetId)
+        setIsMobileChatOpen(true)
+      }
+
+      void refetchConversations()
+    }
+
     window.addEventListener('messenger:conversation-read', handleSync)
     window.addEventListener('messenger:conversation-closed', handleSync)
-    window.addEventListener('messenger:conversation-created', handleSync)
+    window.addEventListener('messenger:conversation-created', handleCreated)
     window.addEventListener('messenger:conversation-updated', handleSync)
 
     return () => {
       window.removeEventListener('messenger:conversation-read', handleSync)
       window.removeEventListener('messenger:conversation-closed', handleSync)
-      window.removeEventListener('messenger:conversation-created', handleSync)
+      window.removeEventListener('messenger:conversation-created', handleCreated)
       window.removeEventListener('messenger:conversation-updated', handleSync)
     }
   }, [refetchConversations])
@@ -149,18 +182,23 @@ export const useConversationsPage = ({
   }, [config.reverb, handleRealtimeConversationCreated, handleUnreadUpdate, currentUserId])
 
   const selectedConversation = useMemo(
-    () => conversations.find((conversation) => conversation.id === selectedId),
-    [conversations, selectedId]
+      () =>
+conversations.find((conversation) => String(conversation.id) === String(selectedId)) ??
+  (fallbackConversation && String(fallbackConversation.id) === String(selectedId)
+    ? fallbackConversation
+    : undefined),
+  [conversations, fallbackConversation, selectedId]
   )
 
-  const selectConversation = useCallback(
-    (id: string) => {
-      setSelectedId(id)
-      setIsMobileChatOpen(true)
+const selectConversation = useCallback(
+  (id: string) => {
+    const normalizedId = String(id)
+    setSelectedId(normalizedId)
+    setIsMobileChatOpen(true)
 
-      if (id && currentUserId) {
+      if (normalizedId && currentUserId) {
         void markConversationAsRead({
-          conversationId: id,
+          conversationId: normalizedId,
           read_until: new Date().toISOString(),
           user_id: currentUserId
         })
@@ -173,47 +211,48 @@ export const useConversationsPage = ({
     [currentUserId, markConversationAsRead, refetchConversations]
   )
 
-  const unselectConversation = () => {
-    setSelectedId('')
-    setIsMobileChatOpen(false)
-  }
+const unselectConversation = () => {
+  setSelectedId('')
+  setIsMobileChatOpen(false)
+}
 
-  const goBackToConversationList = () => setIsMobileChatOpen(false)
+const goBackToConversationList = () => setIsMobileChatOpen(false)
 
-  const handleConversationCreated = (conversation: Conversation) => {
-    setSelectedId(conversation.id)
-    setIsMobileChatOpen(true)
-    setIsNewConversationOpen(false)
-    void refetchConversations()
-  }
+const handleConversationCreated = (conversation: Conversation) => {
+  setFallbackConversation(conversation)
+  setSelectedId(String(conversation.id))
+  setIsMobileChatOpen(true)
+  setIsNewConversationOpen(false)
+  void refetchConversations()
+}
 
-  return {
-    conversations,
-    selectedId,
-    setSelectedId,
-    selectedConversation,
-    closedFilter,
-    setClosedFilter,
-    typeFilter,
-    setTypeFilter,
-    searchQuery,
-    setSearchQuery,
-    isContextPanelOpen,
-    isMobileChatOpen,
-    isNewConversationOpen,
-    isLoading,
-    isFetching,
-    errors,
-    hasReadPermission,
-    currentUser,
-    currentUserId,
-    selectConversation,
-    unselectConversation,
-    setIsContextPanelOpen,
-    setIsNewConversationOpen,
-    goBackToConversationList,
-    handleConversationCreated
-  }
+return {
+  conversations,
+  selectedId,
+  setSelectedId,
+  selectedConversation,
+  closedFilter,
+  setClosedFilter,
+  typeFilter,
+  setTypeFilter,
+  searchQuery,
+  setSearchQuery,
+  isContextPanelOpen,
+  isMobileChatOpen,
+  isNewConversationOpen,
+  isLoading,
+  isFetching,
+  errors,
+  hasReadPermission,
+  currentUser,
+  currentUserId,
+  selectConversation,
+  unselectConversation,
+  setIsContextPanelOpen,
+  setIsNewConversationOpen,
+  goBackToConversationList,
+  handleConversationCreated
+}
 }
 
 export default useConversationsPage

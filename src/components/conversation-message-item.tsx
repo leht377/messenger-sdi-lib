@@ -13,6 +13,7 @@ interface ConversationMessageItemProps {
   conversationName: string
   conversationAvatarUrl?: string
   isBot?: boolean
+  disableActions?: boolean
   onActionClick?: (action: MessageActionButton) => void
 }
 
@@ -34,6 +35,7 @@ export function ConversationMessageItem({
   conversationName,
   conversationAvatarUrl,
   isBot = false,
+  disableActions = false,
   onActionClick
 }: ConversationMessageItemProps) {
   const isSenderBot =
@@ -94,8 +96,8 @@ export function ConversationMessageItem({
             isOwnMessage
               ? 'rounded-tr-xs bg-blue-600 text-white shadow-xs'
               : isSenderBot
-              ? 'rounded-tl-xs bg-gradient-to-b from-violet-50/70 to-white dark:from-neutral-800/90 dark:to-neutral-900/90 text-neutral-900 dark:text-neutral-100 border border-violet-200/70 dark:border-violet-800/50 shadow-xs ring-1 ring-violet-500/10'
-              : 'rounded-tl-xs bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 border border-neutral-200/80 dark:border-neutral-700/60 shadow-xs'
+                ? 'rounded-tl-xs bg-gradient-to-b from-violet-50/70 to-white dark:from-neutral-800/90 dark:to-neutral-900/90 text-neutral-900 dark:text-neutral-100 border border-violet-200/70 dark:border-violet-800/50 shadow-xs ring-1 ring-violet-500/10'
+                : 'rounded-tl-xs bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 border border-neutral-200/80 dark:border-neutral-700/60 shadow-xs'
           )}
         >
           {attachments.map((attachment: MessageAttachment) => {
@@ -145,8 +147,18 @@ export function ConversationMessageItem({
                 <button
                   key={btn.id}
                   type='button'
-                  onClick={() => onActionClick?.(btn)}
-                  className='inline-flex items-center gap-1.5 rounded-lg border border-violet-200 dark:border-violet-700/60 bg-white/95 dark:bg-neutral-800/90 hover:bg-violet-600 hover:text-white dark:hover:bg-violet-600 dark:hover:text-white hover:border-violet-600 dark:hover:border-violet-600 px-2.5 py-1.5 text-xs font-semibold text-violet-700 dark:text-violet-300 shadow-2xs transition-all active:scale-95 cursor-pointer'
+                  disabled={disableActions}
+                  onClick={() => {
+                    if (!disableActions) {
+                      onActionClick?.(btn)
+                    }
+                  }}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold shadow-2xs transition-all',
+                    disableActions
+                      ? 'border-neutral-200 dark:border-neutral-700/50 bg-neutral-100/80 dark:bg-neutral-800/50 text-neutral-400 dark:text-neutral-500 cursor-not-allowed opacity-60'
+                      : 'border-violet-200 dark:border-violet-700/60 bg-white/95 dark:bg-neutral-800/90 hover:bg-violet-600 hover:text-white dark:hover:bg-violet-600 dark:hover:text-white hover:border-violet-600 dark:hover:border-violet-600 text-violet-700 dark:text-violet-300 active:scale-95 cursor-pointer'
+                  )}
                 >
                   <span>{btn.label}</span>
                 </button>

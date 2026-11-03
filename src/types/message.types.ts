@@ -20,6 +20,7 @@ export interface MessageActionButton {
 }
 
 export interface MessageMetadata {
+  session_uuid?: string | null
   state?: string
   action_buttons?: MessageActionButton[]
   [key: string]: unknown

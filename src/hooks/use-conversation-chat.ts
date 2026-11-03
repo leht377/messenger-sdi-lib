@@ -11,6 +11,11 @@ import useUpdateConversationTyping from './api/conversations/use-update-conversa
 import useCloseConversation from './api/conversations/use-close-conversation'
 import { toast } from 'sonner'
 import { subscribeToConversation } from '../utils/reverb'
+import {
+  getConversationSessionId,
+  removeConversationSessionId,
+  saveConversationSessionId
+} from '../utils/session-storage.util'
 import { useChatContext } from '../context/chat-context'
 import { playNotificationSound } from '../utils/audio.util'
 
@@ -392,6 +397,30 @@ export const useConversationChat = (
   useEffect(() => {
     markConversationAsReadIfNeeded()
   }, [conversation, messages, scheduleMarkAsRead])
+
+  // Sincronizar o limpiar session_uuid asociado a la conversación en localStorage
+  useEffect(() => {
+    if (!conversation.id) return
+
+    if (isClosed) {
+      removeConversationSessionId(conversation.id)
+      return
+    }
+
+    if (getConversationSessionId(conversation.id)) return
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const group = messages[i]
+      if (!Array.isArray(group?.messages)) continue
+      for (let j = group.messages.length - 1; j >= 0; j--) {
+        const sessionUuid = group.messages[j]?.attributes?.metadata?.session_uuid
+        if (sessionUuid) {
+          saveConversationSessionId(conversation.id, String(sessionUuid))
+          return
+        }
+      }
+    }
+  }, [conversation.id, isClosed, messages])
 
   // Suscripción a eventos en tiempo real para la conversación
   useEffect(() => {

@@ -1,6 +1,7 @@
 import Pusher from "pusher-js";
 import { TypingEvent, UnreadEvent } from "../types/conversation.types";
 import { toMessageEnvelope } from "./normalizers";
+import { saveConversationSessionId } from "./session-storage.util";
 import { Message } from "../types/message.types";
 import type { ChatConfig } from "../context/chat-context";
 
@@ -53,7 +54,13 @@ export function subscribeToConversation(
   const channel = pusher.subscribe(`conversation.${conversationId}`);
 
   channel.bind("MessageSent", (data: Record<string, unknown>) => {
-    onMessage(toMessageEnvelope(data));
+    const message = toMessageEnvelope(data);
+    const sessionUuid = message.attributes.metadata?.session_uuid;
+    const targetConvId = message.attributes.conversation_id || conversationId;
+    if (sessionUuid && targetConvId) {
+      saveConversationSessionId(targetConvId, String(sessionUuid));
+    }
+    onMessage(message);
   });
 
   if (onTyping) {

@@ -27,6 +27,7 @@ interface ConversationMessagesListProps {
   isNearBottom?: boolean
   newMessagesCount?: number
   visibleDate?: string
+  disableActions?: boolean
   onScrollToBottom?: () => void
   onActionClick?: (action: MessageActionButton) => void
 }
@@ -42,6 +43,7 @@ export function ConversationMessagesList({
   isNearBottom = true,
   newMessagesCount = 0,
   visibleDate = 'Hoy',
+  disableActions = false,
   onScrollToBottom,
   onActionClick
 }: ConversationMessagesListProps) {
@@ -50,12 +52,17 @@ export function ConversationMessagesList({
   const conversationName = getConversationName(conversation, currentUserId)
   const conversationUser = getConversationUser(conversation, currentUserId)
   const isBotConversation = isConversationBot(conversation, currentUserId) || isUserBot(conversationUser)
+  const isConversationClosed = Boolean(conversation.attributes.closed_at)
   const historyMessageIds = new Set(
     messages.flatMap((messageGroup) => messageGroup.messages.map((message) => message.id))
   )
   const visibleOptimisticMessages = optimisticMessages.filter(
     (message) => !historyMessageIds.has(message.id)
   )
+  const lastMessageId =
+    visibleOptimisticMessages.length > 0
+      ? visibleOptimisticMessages[visibleOptimisticMessages.length - 1]?.id
+      : messages[0]?.messages?.[0]?.id
 
   const isToday =
     visibleDate.toLowerCase() === 'hoy' ||
@@ -140,6 +147,7 @@ export function ConversationMessagesList({
               {[...messageGroup.messages].reverse().map((message) => {
                 const isOwnMessage =
                   String(message?.relationships?.sender?.id) === String(currentUserId)
+                const isLastMessage = message.id === lastMessageId
 
                 return (
                   <div
@@ -154,6 +162,7 @@ export function ConversationMessagesList({
                       conversationName={conversationName}
                       conversationAvatarUrl={conversationUser?.attributes.avatar_url || undefined}
                       isBot={isBotConversation}
+                      disableActions={disableActions || isConversationClosed || !isLastMessage}
                       onActionClick={onActionClick}
                     />
                   </div>
@@ -169,23 +178,27 @@ export function ConversationMessagesList({
                   Hoy
                 </span>
               </div>
-              {[...visibleOptimisticMessages].map((message) => (
-                <div
-                  key={message.id}
-                  data-message-date={message.attributes.created_at?.slice(0, 10) || 'Hoy'}
-                  className='w-full'
-                >
-                  <ConversationMessageItem
-                    message={message}
-                    isOwnMessage
-                    isGroup={isGroup}
-                    conversationName={conversationName}
-                    conversationAvatarUrl={conversationUser?.attributes.avatar_url || undefined}
-                    isBot={isBotConversation}
-                    onActionClick={onActionClick}
-                  />
-                </div>
-              ))}
+              {[...visibleOptimisticMessages].map((message) => {
+                const isLastMessage = message.id === lastMessageId
+                return (
+                  <div
+                    key={message.id}
+                    data-message-date={message.attributes.created_at?.slice(0, 10) || 'Hoy'}
+                    className='w-full'
+                  >
+                    <ConversationMessageItem
+                      message={message}
+                      isOwnMessage
+                      isGroup={isGroup}
+                      conversationName={conversationName}
+                      conversationAvatarUrl={conversationUser?.attributes.avatar_url || undefined}
+                      isBot={isBotConversation}
+                      disableActions={disableActions || isConversationClosed || !isLastMessage}
+                      onActionClick={onActionClick}
+                    />
+                  </div>
+                )
+              })}
             </div>
           )}
 

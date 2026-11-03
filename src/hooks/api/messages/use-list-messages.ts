@@ -151,7 +151,15 @@ const useListMessages = ({ params, enabled = true }: Props) => {
 
   const prependIncomingMessage = useCallback((message: Message) => {
     setPages((prevPages) => {
-      if (!prevPages || prevPages.length === 0) return prevPages
+      if (!prevPages || prevPages.length === 0) {
+        return [
+          {
+            data: {
+              data: prependMessage([], message)
+            }
+          } as AxiosResponse<ResponseApiMessage<ConversationMessage[]>>
+        ]
+      }
       const firstPage = prevPages[0]
       const currentGroups = firstPage.data?.data ?? []
       const updatedGroups = prependMessage(currentGroups, message)

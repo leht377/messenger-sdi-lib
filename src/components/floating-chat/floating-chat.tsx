@@ -173,7 +173,12 @@ export function FloatingChat({
   }, [conversations])
 
   const activeConversation =
-    customActiveConversation ||
+    (customActiveConversation
+      ? selectedConversation &&
+        String(selectedConversation.id) === String(customActiveConversation.id)
+        ? selectedConversation
+        : customActiveConversation
+      : null) ||
     initialConversation ||
     selectedConversation ||
     null
@@ -290,48 +295,44 @@ export function FloatingChat({
 
   // Manejador del resultado de escalar a un técnico desde el chat de IA
   const handleEscalateSuccess = (response: EscalateChatSupportResponse) => {
-    if (response?.conversation_id && response?.technician) {
+    if (response?.conversation_id) {
       const convId = String(response.conversation_id)
-      const techUser: UserChat = {
-        id: String(response.technician.id),
-        type: 'user',
-        attributes: {
-          user_auth_id: Number(response.technician.user_auth_id),
-          name: response.technician.name,
-          avatar_url: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        relationships: []
-      }
+      const techUser: UserChat | undefined = response.technician
+        ? {
+            id: String(response.technician.id),
+            type: 'user',
+            attributes: {
+              user_auth_id: Number(response.technician.user_auth_id ?? response.technician.id ?? 1),
+              name: response.technician.name,
+              avatar_url: null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            },
+            relationships: []
+          }
+        : undefined
 
       const newConv: Conversation = {
         id: convId,
         type: 'conversation',
         attributes: {
           is_group: false,
-          name: response.technician.name || (response.ticket as any)?.subject || 'Soporte SDI',
+          name: response.technician?.name || (response.ticket as any)?.subject || 'Soporte SDI',
           closed_at: null,
           unread_count: 0,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         },
         relationships: {
-          users: [techUser]
+          users: techUser ? [techUser] : []
         }
       }
 
       setCustomActiveConversation(newConv)
       handleConversationCreated(newConv)
-      toast.success(`Asistencia iniciada con ${response.technician.name}`, {
-        description: `Ticket #${response.ticket?.number || response.ticket?.id}`
-      })
       setCurrentView('chat')
-    } else {
+    } else if (response?.ticket) {
       setNoTechResult(response as any)
-      toast.info(response.message || 'Ticket creado en Helpdesk', {
-        description: `Ticket #${response.ticket?.number || response.ticket?.id}`
-      })
       setCurrentView('no-technician')
     }
   }
