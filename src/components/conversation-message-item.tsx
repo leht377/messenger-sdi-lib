@@ -1,10 +1,9 @@
-'use client'
-
 import React from 'react'
 import { Avatar, cn } from '../ui'
 import { CheckCheck, Clock, Download, FileText, Sparkles } from 'lucide-react'
 import type { Message, MessageAttachment, MessageActionButton } from '../types/message.types'
 import { capitalizeWords } from '../utils/conversation.util'
+import { MessageMarkdown } from './message-markdown'
 
 interface ConversationMessageItemProps {
   message: Message
@@ -134,11 +133,23 @@ export function ConversationMessageItem({
             )
           })}
           {message.attributes.body && attachments.length === 0 && (
-            <p className='whitespace-pre-wrap break-words'>{message.attributes.body}</p>
+            <MessageMarkdown
+              content={message.attributes.body}
+              isOwnMessage={isOwnMessage}
+              isBot={isSenderBot}
+            />
           )}
-          {message.attributes.body && attachments.length > 0 && message.attributes.body !== 'Archivo adjunto' && (
-            <p className='whitespace-pre-wrap break-words mt-1'>{message.attributes.body}</p>
-          )}
+          {message.attributes.body &&
+            attachments.length > 0 &&
+            message.attributes.body !== 'Archivo adjunto' && (
+              <div className='mt-1'>
+                <MessageMarkdown
+                  content={message.attributes.body}
+                  isOwnMessage={isOwnMessage}
+                  isBot={isSenderBot}
+                />
+              </div>
+            )}
 
           {/* Botones de acción del bot / IA */}
           {isSenderBot && !isOwnMessage && actionButtons.length > 0 && (

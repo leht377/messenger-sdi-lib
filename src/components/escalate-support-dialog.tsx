@@ -14,6 +14,7 @@ import {
 import { Headset, Loader2, SendHorizontal, AlertCircle, Clock, Users } from 'lucide-react'
 import type { EscalateChatSupportResponse } from '../types/chat-support.types'
 import type { MessageActionButton } from '../types/message.types'
+import { MessageMarkdown } from './message-markdown'
 
 export interface EscalateSupportDialogProps {
   open: boolean
@@ -120,7 +121,7 @@ export function EscalateSupportDialog({
 
               {queueData.message && (
                 <div className='rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-800/50 p-3 text-xs leading-relaxed text-neutral-700 dark:text-neutral-200'>
-                  {queueData.message}
+                  <MessageMarkdown content={queueData.message} />
                 </div>
               )}
 

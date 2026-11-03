@@ -62,6 +62,12 @@ export {
   type ResolveSupportDialogProps
 } from './components/resolve-support-dialog'
 
+export {
+  MessageMarkdown,
+  sanitizeUrl,
+  type MessageMarkdownProps
+} from './components/message-markdown'
+
 export { RequestSupportForm, type RequestSupportFormProps } from './components/request-support-form'
 
 // 3. Hooks Principales (para vistas embebidas personalizadas)
