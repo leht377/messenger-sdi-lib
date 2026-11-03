@@ -10,8 +10,12 @@ export interface FloatingChatProps {
   canViewChatList?: boolean
   /** Permite al usuario solicitar nuevo soporte (por defecto: true) */
   canRequestSupport?: boolean
-  /** Permite al usuario iniciar conversación con el asistente virtual / bot (por defecto: true) */
-  canChatWithBot?: boolean
+  /**
+   * Define si "Solicitar Asistencia" inicia conversación mediante el Bot (true)
+   * o mediante el formulario tradicional hacia un técnico (false).
+   * Si se omite, toma el valor de `ChatConfig.supportWithBot` (por defecto: true).
+   */
+  supportWithBot?: boolean
   /** Vista inicial al abrir el widget (por defecto: 'home') */
   defaultView?: FloatingChatView
   /** Esquina inicial donde se ubicará el widget (por defecto: 'bottom-right' o la guardada) */

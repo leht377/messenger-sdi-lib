@@ -10,6 +10,11 @@ export interface ChatConfig {
   apiBaseUrl: string
   authToken: string
   applicationId: string | number
+  /**
+   * Define si "Solicitar Asistencia" inicia conversación con el Bot (true)
+   * o abre el formulario directo a técnico (false). Por defecto: true.
+   */
+  supportWithBot?: boolean
   reverb: {
     key: string
     host: string

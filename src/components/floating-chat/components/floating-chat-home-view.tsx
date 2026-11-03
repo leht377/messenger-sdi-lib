@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { LifeBuoy, MessagesSquare, ChevronRight, ShieldCheck, X, Bot, Sparkles, Loader2 } from 'lucide-react'
+import { LifeBuoy, MessagesSquare, ChevronRight, ShieldCheck, X, Loader2 } from 'lucide-react'
 import { Button } from '../../../ui'
 import { ConversationsUserFooter } from '../../conversations-user-footer'
 import { LIB_VERSION } from '../../../utils/version'
@@ -10,13 +10,12 @@ interface FloatingChatHomeViewProps {
   title: string
   canRequestSupport: boolean
   canViewChatList: boolean
-  canChatWithBot?: boolean
+  supportWithBot?: boolean
   isStartingBot?: boolean
   totalUnreadCount: number
   conversationsCount: number
   onRequestSupport: () => void
   onViewChatList: () => void
-  onStartBotConversation: () => void
   onClose: () => void
   onNewConversation: () => void
   onDragStart: (e: React.PointerEvent) => void
@@ -26,13 +25,12 @@ export function FloatingChatHomeView({
   title,
   canRequestSupport,
   canViewChatList,
-  canChatWithBot = true,
+  supportWithBot = true,
   isStartingBot = false,
   totalUnreadCount,
   conversationsCount,
   onRequestSupport,
   onViewChatList,
-  onStartBotConversation,
   onClose,
   onNewConversation,
   onDragStart
@@ -79,58 +77,31 @@ export function FloatingChatHomeView({
 
       {/* Opciones de Entrada */}
       <div className='flex-1 min-h-0 overflow-y-auto p-4 space-y-3'>
-        {canChatWithBot && (
-          <button
-            type='button'
-            onClick={onStartBotConversation}
-            disabled={isStartingBot}
-            className='group flex w-full items-center justify-between rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/40 p-3.5 text-left shadow-xs transition-all hover:border-violet-500/50 hover:bg-violet-50/50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed'
-          >
-            <div className='flex items-center gap-3'>
-              <div className='flex size-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 transition-colors group-hover:bg-violet-600 group-hover:text-white'>
-                {isStartingBot ? (
-                  <Loader2 className='size-5 animate-spin' />
-                ) : (
-                  <Bot className='size-5' />
-                )}
-              </div>
-              <div>
-                <div className='flex items-center gap-1.5'>
-                  <h4 className='text-xs font-bold text-neutral-900 dark:text-neutral-100 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors'>
-                    Asistente Virtual (Bot)
-                  </h4>
-                  <span className='inline-flex items-center gap-1 rounded-full bg-violet-100 dark:bg-violet-950/60 px-1.5 py-0.2 text-[9.5px] font-semibold text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-800/40'>
-                    <Sparkles className='size-2.5' />
-                    IA
-                  </span>
-                </div>
-                <p className='text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5'>
-                  {isStartingBot
-                    ? 'Iniciando conversación...'
-                    : 'Consulta inmediata con nuestro asistente inteligente'}
-                </p>
-              </div>
-            </div>
-            <ChevronRight className='size-4 text-neutral-400 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors' />
-          </button>
-        )}
-
         {canRequestSupport && (
           <button
             type='button'
             onClick={onRequestSupport}
-            className='group flex w-full items-center justify-between rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/40 p-3.5 text-left shadow-xs transition-all hover:border-blue-500/50 hover:bg-blue-50/50 dark:hover:bg-neutral-800 cursor-pointer'
+            disabled={isStartingBot}
+            className='group flex w-full items-center justify-between rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/40 p-3.5 text-left shadow-xs transition-all hover:border-blue-500/50 hover:bg-blue-50/50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed'
           >
             <div className='flex items-center gap-3'>
               <div className='flex size-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 transition-colors group-hover:bg-blue-600 group-hover:text-white'>
-                <LifeBuoy className='size-5' />
+                {isStartingBot ? (
+                  <Loader2 className='size-5 animate-spin' />
+                ) : (
+                  <LifeBuoy className='size-5' />
+                )}
               </div>
               <div>
                 <h4 className='text-xs font-bold text-neutral-900 dark:text-neutral-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors'>
                   Solicitar Asistencia
                 </h4>
                 <p className='text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5'>
-                  Ingresa asunto y mensaje para iniciar soporte
+                  {isStartingBot
+                    ? 'Iniciando conversación...'
+                    : supportWithBot
+                    ? 'Inicia atención inmediata con nuestro asistente'
+                    : 'Ingresa asunto y mensaje para iniciar soporte'}
                 </p>
               </div>
             </div>

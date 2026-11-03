@@ -32,7 +32,7 @@ import { FloatingChatErrorView } from './components/floating-chat-error-view'
 export function FloatingChat({
   canViewChatList = true,
   canRequestSupport = true,
-  canChatWithBot = true,
+  supportWithBot,
   defaultView = 'home',
   defaultCorner = 'bottom-right',
   initialConversation,
@@ -65,9 +65,14 @@ export function FloatingChat({
     operator: 'OR'
   })
 
+  // Contextos de usuario y configuración
+  const { currentUser, isLoadingUser, hasError, error: chatError, config } = useChatContext()
+  const resolvedUserId = currentUser?.id
+  const resolvedUserName = currentUser?.attributes?.name || 'Usuario'
+
   const effectiveCanViewChatList = canViewChatList && hasReadChat
   const effectiveCanRequestSupport = canRequestSupport && hasRequestSupport
-  const effectiveCanChatWithBot = canChatWithBot
+  const effectiveSupportWithBot = supportWithBot ?? config.supportWithBot ?? true
 
   // Hook de visibilidad condicional por ruta
   const { shouldHide } = useFloatingChatVisibility({
@@ -95,14 +100,11 @@ export function FloatingChat({
   const [currentView, setCurrentView] = useState<FloatingChatView>(() => {
     if (!effectiveCanViewChatList && !effectiveCanRequestSupport) return 'chat'
     if (defaultView === 'list' && !effectiveCanViewChatList) return 'home'
-    if (defaultView === 'support-form' && !effectiveCanRequestSupport) return 'home'
+    if (defaultView === 'support-form' && (!effectiveCanRequestSupport || effectiveSupportWithBot)) {
+      return 'home'
+    }
     return defaultView
   })
-
-  // Contextos de usuario
-  const { currentUser, isLoadingUser, hasError, error: chatError } = useChatContext()
-  const resolvedUserId = currentUser?.id
-  const resolvedUserName = currentUser?.attributes?.name || 'Usuario'
 
   // Hook para solicitar chat-support
   const {
@@ -137,6 +139,14 @@ export function FloatingChat({
         err?.message ||
         'Error al iniciar conversación con el bot'
       toast.error(errorMsg)
+    }
+  }
+
+  const handleRequestSupportAction = () => {
+    if (effectiveSupportWithBot) {
+      void handleStartBotConversation()
+    } else {
+      setCurrentView('support-form')
     }
   }
 
@@ -212,8 +222,13 @@ export function FloatingChat({
     if (!isOpen) {
       setIsOpen(true)
       if (defaultView === 'list' && !effectiveCanViewChatList) {
-        setCurrentView(effectiveCanRequestSupport ? 'support-form' : 'home')
-      } else if (defaultView === 'support-form' && !effectiveCanRequestSupport) {
+        setCurrentView(
+          effectiveCanRequestSupport && !effectiveSupportWithBot ? 'support-form' : 'home'
+        )
+      } else if (
+        defaultView === 'support-form' &&
+        (!effectiveCanRequestSupport || effectiveSupportWithBot)
+      ) {
         setCurrentView(effectiveCanViewChatList ? 'list' : 'home')
       } else if (defaultView) {
         setCurrentView(defaultView)
@@ -226,7 +241,7 @@ export function FloatingChat({
   }
 
   // Si la ruta lo oculta O el usuario no tiene ningún permiso de mensajería (y ya cargó)
-  if (shouldHide || (!isLoadingUser && !hasError && !hasAnyPermission && !effectiveCanChatWithBot)) {
+  if (shouldHide || (!isLoadingUser && !hasError && !hasAnyPermission)) {
     return null
   }
 
@@ -386,13 +401,12 @@ export function FloatingChat({
                   title={title}
                   canRequestSupport={effectiveCanRequestSupport}
                   canViewChatList={effectiveCanViewChatList}
-                  canChatWithBot={effectiveCanChatWithBot}
+                  supportWithBot={effectiveSupportWithBot}
                   isStartingBot={isStartingBot}
                   totalUnreadCount={totalUnreadCount}
                   conversationsCount={conversations.length}
-                  onRequestSupport={() => setCurrentView('support-form')}
+                  onRequestSupport={handleRequestSupportAction}
                   onViewChatList={() => setCurrentView('list')}
-                  onStartBotConversation={handleStartBotConversation}
                   onClose={() => setIsOpen(false)}
                   onNewConversation={() => setIsNewConversationOpen(true)}
                   onDragStart={startDrag}
@@ -427,7 +441,12 @@ export function FloatingChat({
                   ticket={noTechResult?.ticket}
                   onNewRequest={() => {
                     setNoTechResult(null)
-                    setCurrentView('support-form')
+                    if (effectiveSupportWithBot) {
+                      setCurrentView('home')
+                      void handleStartBotConversation()
+                    } else {
+                      setCurrentView('support-form')
+                    }
                   }}
                   onViewChats={() => setCurrentView('list')}
                   onClose={() => setIsOpen(false)}
