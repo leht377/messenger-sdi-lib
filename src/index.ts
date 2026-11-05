@@ -79,6 +79,11 @@ export { default as useConversationChat } from './hooks/use-conversation-chat'
 export { default as useEscalateChatSupport } from './hooks/api/use-escalate-chat-support'
 export { default as useResolveChatSupport } from './hooks/api/use-resolve-chat-support'
 export {
+  default as useChatBotQueuePolling,
+  type UseChatBotQueuePollingOptions
+} from './hooks/api/use-chat-bot-queue-polling'
+export { default as useChatBotQueueToTicket } from './hooks/api/use-chat-bot-queue-to-ticket'
+export {
   default as useShowConversation,
   type UseShowConversationOptions
 } from './hooks/use-show-conversation'
@@ -118,12 +123,22 @@ export type {
   EscalateChatSupportPayload,
   EscalateChatSupportResponse,
   ResolveChatSupportPayload,
-  ResolveChatSupportResponse
+  ResolveChatSupportResponse,
+  ChatBotQueueStatusResponse,
+  ChatBotQueueToTicketPayload,
+  ChatBotQueueToTicketResponse
 } from './types/chat-support.types'
 
 // 5. Constantes & Utilidades
 export { LIB_VERSION } from './utils/version'
 export { closeConversationService } from './services/conversation.services'
+export {
+  requestChatSupportService,
+  escalateChatSupportService,
+  resolveChatSupportService,
+  chatBotQueueStatusService,
+  chatBotQueueToTicketService
+} from './services/chat-support.services'
 export {
   saveConversationSessionId,
   getConversationSessionId,

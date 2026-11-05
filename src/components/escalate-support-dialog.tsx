@@ -11,7 +11,7 @@ import {
   Button,
   Textarea
 } from '../ui'
-import { Headset, Loader2, SendHorizontal, AlertCircle, Clock, Users } from 'lucide-react'
+import { Headset, Loader2, SendHorizontal, AlertCircle, Clock, Users, ArrowRight } from 'lucide-react'
 import type { EscalateChatSupportResponse } from '../types/chat-support.types'
 import type { MessageActionButton } from '../types/message.types'
 import { MessageRichText } from './message-rich-text'
@@ -24,6 +24,9 @@ export interface EscalateSupportDialogProps {
   error?: string | null
   queueData?: EscalateChatSupportResponse | null
   onActionSelect?: (action: MessageActionButton) => void
+  isPollingQueue?: boolean
+  onConvertToTicket?: () => Promise<void> | void
+  isConvertingToTicket?: boolean
 }
 
 export function EscalateSupportDialog({
@@ -33,13 +36,19 @@ export function EscalateSupportDialog({
   isSubmitting = false,
   error = null,
   queueData = null,
-  onActionSelect
+  onActionSelect,
+  isPollingQueue = false,
+  onConvertToTicket,
+  isConvertingToTicket = false
 }: EscalateSupportDialogProps) {
   const [reason, setReason] = useState('')
   const [validationError, setValidationError] = useState<string | null>(null)
 
   const handleClose = (nextOpen: boolean) => {
-    if (!nextOpen && !isSubmitting) {
+    if (!nextOpen && (isSubmitting || isConvertingToTicket)) {
+      return
+    }
+    if (!nextOpen) {
       setReason('')
       setValidationError(null)
     }
@@ -125,36 +134,90 @@ export function EscalateSupportDialog({
                 </div>
               )}
 
-              {actionButtons.length > 0 && (
+              {/* Indicador de Sondeo Activo */}
+              {isPollingQueue && (
+                <div className='flex items-center justify-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-[11px] font-medium text-amber-700 dark:text-amber-300'>
+                  <Loader2 className='size-3.5 animate-spin text-amber-600 dark:text-amber-400 shrink-0' />
+                  <span>Esperando en vivo... verificando disponibilidad cada 5s</span>
+                </div>
+              )}
+
+              {actionButtons.length > 0 ? (
                 <div className='space-y-2 pt-1'>
                   <p className='text-[11px] font-semibold text-neutral-600 dark:text-neutral-400'>
                     Selecciona una opción para continuar:
                   </p>
                   <div className='flex flex-col gap-2'>
-                    {actionButtons.map((btn) => (
-                      <button
-                        key={btn.id}
-                        type='button'
-                        onClick={() => {
-                          setReason('')
-                          setValidationError(null)
-                          onActionSelect?.(btn)
-                        }}
-                        className='flex w-full items-center justify-center gap-2 rounded-xl border border-violet-200 dark:border-violet-800/70 bg-violet-50/60 dark:bg-violet-950/40 hover:bg-violet-600 hover:text-white dark:hover:bg-violet-600 dark:hover:text-white hover:border-violet-600 px-3.5 py-2.5 text-xs font-semibold text-violet-700 dark:text-violet-300 shadow-2xs transition-all active:scale-98 cursor-pointer'
-                      >
-                        <span>{btn.label}</span>
-                      </button>
-                    ))}
+                    {actionButtons.map((btn) => {
+                      const isConvertTicketBtn =
+                        btn.action === 'convert_ticket' ||
+                        btn.id === 'convert_ticket' ||
+                        btn.label?.toLowerCase().includes('crear ticket')
+
+                      return (
+                        <button
+                          key={btn.id}
+                          type='button'
+                          disabled={isConvertingToTicket}
+                          onClick={() => {
+                            if (isConvertTicketBtn && onConvertToTicket) {
+                              void onConvertToTicket()
+                              return
+                            }
+                            setReason('')
+                            setValidationError(null)
+                            onActionSelect?.(btn)
+                          }}
+                          className='flex w-full items-center justify-center gap-2 rounded-xl border border-violet-200 dark:border-violet-800/70 bg-violet-50/60 dark:bg-violet-950/40 hover:bg-violet-600 hover:text-white dark:hover:bg-violet-600 dark:hover:text-white hover:border-violet-600 px-3.5 py-2.5 text-xs font-semibold text-violet-700 dark:text-violet-300 shadow-2xs transition-all active:scale-98 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+                        >
+                          {isConvertTicketBtn && isConvertingToTicket ? (
+                            <>
+                              <Loader2 className='size-3.5 animate-spin' />
+                              <span>Creando ticket y cerrando...</span>
+                            </>
+                          ) : (
+                            <span>{btn.label}</span>
+                          )}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
-              )}
+              ) : onConvertToTicket ? (
+                <div className='pt-1'>
+                  <button
+                    type='button'
+                    disabled={isConvertingToTicket}
+                    onClick={() => {
+                      void onConvertToTicket()
+                    }}
+                    className='flex w-full items-center justify-center gap-2 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700/80 px-3.5 py-2.5 text-xs font-semibold text-neutral-800 dark:text-neutral-200 shadow-2xs transition-all active:scale-98 cursor-pointer disabled:opacity-50'
+                  >
+                    {isConvertingToTicket ? (
+                      <>
+                        <Loader2 className='size-3.5 animate-spin' />
+                        <span>Creando ticket...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>📝 Dejar como ticket y cerrar chat</span>
+                        <ArrowRight className='size-3.5' />
+                      </>
+                    )}
+                  </button>
+                </div>
+              ) : null}
             </div>
 
-            <DialogFooter className='p-3 bg-neutral-50/70 dark:bg-neutral-900/80 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-end'>
+            <DialogFooter className='p-3 bg-neutral-50/70 dark:bg-neutral-900/80 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between'>
+              <span className='text-[10px] text-neutral-400'>
+                {isPollingQueue ? 'Sondeo activo' : 'Cola de atención'}
+              </span>
               <Button
                 type='button'
                 variant='ghost'
                 size='sm'
+                disabled={isConvertingToTicket}
                 onClick={() => handleClose(false)}
                 className='text-xs text-neutral-600 dark:text-neutral-400 cursor-pointer'
               >

@@ -1,5 +1,8 @@
 import { chatApiUrl, httpRequest } from '../lib/http-request'
 import {
+  ChatBotQueueStatusResponse,
+  ChatBotQueueToTicketPayload,
+  ChatBotQueueToTicketResponse,
   EscalateChatSupportPayload,
   EscalateChatSupportResponse,
   RequestChatSupportPayload,
@@ -34,6 +37,33 @@ export const resolveChatSupportService = (data: ResolveChatSupportPayload) =>
   httpRequest<ResolveChatSupportResponse>({
     url: RESOLVE_PREVIEW_URL,
     method: 'POST',
+    data
+  })
+
+// URL provisional de preview para consultar estado en cola
+const QUEUE_STATUS_PREVIEW_URL =
+  'https://preview-sdi-services-helpdeskservice-nshtoc-ijvejp.ganebyd.com/api/v1/chat-bot/queue-status'
+
+export const chatBotQueueStatusService = (sessionId: string) =>
+  httpRequest<ChatBotQueueStatusResponse>({
+    url: QUEUE_STATUS_PREVIEW_URL,
+    method: 'GET',
+    params: {
+      session_id: sessionId
+    }
+  })
+
+// URL provisional de preview para convertir cola en ticket asíncrono
+const QUEUE_TO_TICKET_PREVIEW_URL =
+  'https://preview-sdi-services-helpdeskservice-nshtoc-ijvejp.ganebyd.com/api/v1/chat-bot/queue-to-ticket'
+
+export const chatBotQueueToTicketService = (data: ChatBotQueueToTicketPayload) =>
+  httpRequest<ChatBotQueueToTicketResponse>({
+    url: QUEUE_TO_TICKET_PREVIEW_URL,
+    method: 'POST',
+    params: {
+      session_id: data.session_id
+    },
     data
   })
 

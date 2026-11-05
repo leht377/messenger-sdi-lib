@@ -550,8 +550,12 @@ La librería integra de forma nativa el flujo completo de atención mediante el 
 4. **Escalamiento a Técnico (`EscalateSupportDialog` / `useEscalateChatSupport`)**:
    - Envía `{ session_id, reason }` a `/api/v1/chat-bot/escalate`:
      - **`status === "escalated_live"`**: transfiere y hace foco automáticamente en la nueva conversación (`conversation_id`) asignada con el técnico en vivo.
-     - **`status === "in_queue"`**: muestra en el modal la posición en la fila (`queue_position`), el tiempo estimado (`estimated_wait_minutes`), el mensaje informativo y los botones de decisión (ej. *"⏳ Continuar esperando en vivo"* o *"📝 Crear ticket y no esperar"*), enviando como mensaje la opción seleccionada.
-5. **Calificación y Resolución (`ResolveSupportDialog` / `useResolveChatSupport`)**:
+     - **`status === "in_queue"`**: muestra en el modal la posición en la fila (`queue_position`), el tiempo estimado (`estimated_wait_minutes`), el mensaje informativo y los botones de decisión.
+5. **Sondeo Reactivo (Polling cada 5s en Cola) (`useChatBotQueuePolling`)**:
+   - Si el usuario decide continuar esperando en vivo en la cola, el hook consulta periódicamente `GET /api/v1/chat-bot/queue-status?session_id=...` cada 5 segundos hasta obtener la asignación del técnico (`escalated_live`), transfiriendo y enfocando la conversación activa al instante.
+6. **Bypass a Ticket Asíncrono (`useChatBotQueueToTicket`)**:
+   - Si el usuario decide "Dejar como ticket y cerrar chat" (botón `convert_ticket`), se invoca `POST /api/v1/chat-bot/queue-to-ticket?session_id=...`, cerrando la sesión de cola y registrando el ticket de soporte asíncrono.
+7. **Calificación y Resolución (`ResolveSupportDialog` / `useResolveChatSupport`)**:
    - Al pulsar el botón de acción **"✅ Sí, solucionó mi problema"**, se abre un diálogo modal para calificar de **1 a 5 estrellas** y dejar un comentario opcional, enviando `{ session_id, helpful: true, comment, rating }` a `/api/v1/chat-bot/resolve` y dando por finalizada la conversación en estado Resuelto.
 
 ---
@@ -614,6 +618,8 @@ playNotificationSound('unfocused') // Tono de alerta
 - `useCheckHasPermissionMessenger`: Hook para verificar si el usuario actual cuenta con permisos específicos en el chat.
 - `useCloseConversation`: Hook de mutación para cerrar cualquier conversación puntual por su ID desde cualquier parte de la app.
 - `useEscalateChatSupport`: Hook de mutación para escalar una sesión del Bot IA a técnico (`/api/v1/chat-bot/escalate`).
+- `useChatBotQueuePolling`: Hook de sondeo reactivo periódico (cada 5s por defecto) para consultar `GET /api/v1/chat-bot/queue-status?session_id=...` hasta la asignación de un técnico en vivo.
+- `useChatBotQueueToTicket`: Hook de mutación para bypass de cola a ticket (`POST /api/v1/chat-bot/queue-to-ticket?session_id=...`), cerrando el chat y creando el ticket.
 - `useResolveChatSupport`: Hook de mutación para calificar y resolver una sesión del Bot IA (`/api/v1/chat-bot/resolve`).
 - `useConversationsPage`: Gestiona estado de lista, filtros, búsqueda, selección, escalamiento y sincronización de mensajes no leídos.
 - `useConversationChat`: Gestiona mensajes, paginación hacia arriba, escritura en vivo (*typing*), archivos, optimismo y cierre de conversación.
@@ -625,6 +631,9 @@ playNotificationSound('unfocused') // Tono de alerta
 - `activeConversationStore`: Store reactivo global (`get()`, `set()`, `subscribe()`) para leer la conversación activa.
 - `hasMessengerPermission`: Función utilitaria para evaluar listas de permisos con operadores `'AND'` u `'OR'`.
 - `closeConversationService`: Función de servicio HTTP directa para cerrar conversaciones.
+- `requestChatSupportService`, `escalateChatSupportService`, `resolveChatSupportService`: Servicios HTTP para flujos de soporte y bot.
+- `chatBotQueueStatusService`: Servicio HTTP para consulta de estado de cola (`GET /api/v1/chat-bot/queue-status?session_id=...`).
+- `chatBotQueueToTicketService`: Servicio HTTP para bypass de cola a ticket (`POST /api/v1/chat-bot/queue-to-ticket?session_id=...`).
 - `saveConversationSessionId`, `getConversationSessionId`, `removeConversationSessionId`: Utilidades de almacenamiento local para gestionar el `session_uuid` asociado a cada conversación.
 - `sanitizeUrl`: Validador seguro de URLs (`http:`, `https:`, `mailto:`).
 - `playNotificationSound`: Reproductor de tonos de notificación con Web Audio API.
@@ -633,7 +642,7 @@ playNotificationSound('unfocused') // Tono de alerta
 ### Tipos e Interfaces Exportados:
 - **Conversaciones:** `Conversation`, `ConversationType`, `CreateConversationPayload`, `TypingEvent`, `UnreadEvent`.
 - **Mensajes:** `Message`, `MessageAttachment`, `MessageType`, `MessageActionButton`, `MessageMetadata`, `CreateMessagePayload`, `UploadMessageFilePayload`.
-- **Usuarios & Soporte / Bot IA:** `UserChat`, `RequestChatSupportPayload`, `RequestChatSupportResponse`, `EscalateChatSupportPayload`, `EscalateChatSupportResponse`, `ResolveChatSupportPayload`, `ResolveChatSupportResponse`.
+- **Usuarios & Soporte / Bot IA:** `UserChat`, `RequestChatSupportPayload`, `RequestChatSupportResponse`, `EscalateChatSupportPayload`, `EscalateChatSupportResponse`, `ResolveChatSupportPayload`, `ResolveChatSupportResponse`, `ChatBotQueueStatusResponse`, `ChatBotQueueToTicketPayload`, `ChatBotQueueToTicketResponse`.
 - **Permisos:** `PermissionsMessenger`, `CheckMessengerPermissionParams`, `PermissionOperator`.
 - **Cabecera & Personalización:** `ConversationChatHeaderRenderOptions`, `ConversationRenderOptions`, `ActiveConversationContextValue`, `ActiveConversationProviderProps`.
 - **Props de Componentes:** `FloatingChatProps`, `FloatingChatView`, `FloatingChatCorner`, `ConversationChatPanelProps`, `ConversationChatHeaderProps`, `ConversationsSidebarListProps`, `NewConversationDialogProps`, `EscalateSupportDialogProps`, `ResolveSupportDialogProps`, `MessageRichTextProps`, `RequestSupportFormProps`.

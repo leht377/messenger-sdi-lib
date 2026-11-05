@@ -8,6 +8,8 @@ import type {
 import useConversationChat from '../hooks/use-conversation-chat'
 import useEscalateChatSupport from '../hooks/api/use-escalate-chat-support'
 import useResolveChatSupport from '../hooks/api/use-resolve-chat-support'
+import useChatBotQueuePolling from '../hooks/api/use-chat-bot-queue-polling'
+import useChatBotQueueToTicket from '../hooks/api/use-chat-bot-queue-to-ticket'
 import {
   ConversationChatHeader,
   type ConversationChatHeaderRenderOptions
@@ -63,6 +65,8 @@ export function ConversationChatPanel({
   const [isResolveOpen, setIsResolveOpen] = useState(false)
   const [isResolvedLocal, setIsResolvedLocal] = useState(false)
   const [queueResponse, setQueueResponse] = useState<EscalateChatSupportResponse | null>(null)
+  const [isWaitingInQueue, setIsWaitingInQueue] = useState(false)
+
   const {
     mutateAsync: escalateSupport,
     isLoading: isEscalating,
@@ -73,6 +77,61 @@ export function ConversationChatPanel({
     isLoading: isResolving,
     error: resolveError
   } = useResolveChatSupport()
+  const {
+    mutateAsync: queueToTicket,
+    isLoading: isConvertingToTicket
+  } = useChatBotQueueToTicket()
+
+  const resolveCurrentSessionId = () => {
+    let sessionId = getConversationSessionId(conversation.id)
+
+    if (!sessionId) {
+      for (let i = chat.messages.length - 1; i >= 0; i--) {
+        const group = chat.messages[i]
+        if (!Array.isArray(group?.messages)) continue
+        for (let j = group.messages.length - 1; j >= 0; j--) {
+          const candidate = group.messages[j]?.attributes?.metadata?.session_uuid
+          if (candidate) {
+            sessionId = String(candidate)
+            break
+          }
+        }
+        if (sessionId) break
+      }
+    }
+
+    return sessionId || ''
+  }
+
+  const activePollingSessionId = useMemo(() => {
+    return isEscalateOpen && isWaitingInQueue
+      ? String(queueResponse?.session_uuid || resolveCurrentSessionId())
+      : null
+  }, [isEscalateOpen, isWaitingInQueue, queueResponse?.session_uuid])
+
+  useChatBotQueuePolling({
+    sessionId: activePollingSessionId,
+    enabled: Boolean(activePollingSessionId),
+    intervalMs: 5000,
+    onStatusUpdate: (updatedData) => {
+      setQueueResponse((prev) => ({
+        ...prev,
+        ...updatedData
+      }))
+    },
+    onAssigned: (assignedData) => {
+      setIsWaitingInQueue(false)
+      setIsEscalateOpen(false)
+      setQueueResponse(null)
+      toast.success(
+        assignedData.message ||
+          (assignedData.technician
+            ? `Asignado con ${assignedData.technician.name}`
+            : 'Asignación completada')
+      )
+      onEscalateSuccess?.(assignedData as EscalateChatSupportResponse)
+    }
+  })
 
   const chat = useConversationChat(conversation, {
     onCloseSuccess: () => {
@@ -172,31 +231,22 @@ export function ConversationChatPanel({
     }
   }, [conversation])
 
-  const resolveCurrentSessionId = () => {
-    let sessionId = getConversationSessionId(conversation.id)
-
-    if (!sessionId) {
-      for (let i = chat.messages.length - 1; i >= 0; i--) {
-        const group = chat.messages[i]
-        if (!Array.isArray(group?.messages)) continue
-        for (let j = group.messages.length - 1; j >= 0; j--) {
-          const candidate = group.messages[j]?.attributes?.metadata?.session_uuid
-          if (candidate) {
-            sessionId = String(candidate)
-            break
-          }
-        }
-        if (sessionId) break
-      }
-    }
-
-    return sessionId || ''
-  }
-
   const handleActionClick = (action: MessageActionButton) => {
     if (action.action === 'escalate' || action.id === 'escalate') {
       setQueueResponse(null)
+      setIsWaitingInQueue(false)
       setIsEscalateOpen(true)
+      return
+    }
+
+    if (action.action === 'poll_queue' || action.id === 'poll_queue') {
+      setIsWaitingInQueue(true)
+      toast.info('Consultando disponibilidad en vivo cada 5 segundos...')
+      return
+    }
+
+    if (action.action === 'convert_ticket' || action.id === 'convert_ticket') {
+      void handleConvertToTicketSubmit()
       return
     }
 
@@ -235,6 +285,7 @@ export function ConversationChatPanel({
       if (response?.conversation_id) {
         setIsEscalateOpen(false)
         setQueueResponse(null)
+        setIsWaitingInQueue(false)
         toast.success(
           response.message ||
           (response.technician
@@ -246,26 +297,58 @@ export function ConversationChatPanel({
               }
             : undefined
         )
-} else if (response?.status === 'in_queue' || (response?.message && !response?.ticket)) {
-  setQueueResponse(response)
-} else {
-  setIsEscalateOpen(false)
-  setQueueResponse(null)
-  if (response?.ticket) {
-    toast.info(response.message || 'Ticket de soporte registrado', {
-      description: `Ticket #${response.ticket.number || response.ticket.id}`
-    })
-  }
-}
+      } else if (response?.status === 'in_queue' || (response?.message && !response?.ticket)) {
+        setQueueResponse(response)
+        setIsWaitingInQueue(true)
+      } else {
+        setIsEscalateOpen(false)
+        setQueueResponse(null)
+        setIsWaitingInQueue(false)
+        if (response?.ticket) {
+          toast.info(response.message || 'Ticket de soporte registrado', {
+            description: `Ticket #${response.ticket.number || response.ticket.id}`
+          })
+        }
+      }
 
-onEscalateSuccess?.(response)
+      onEscalateSuccess?.(response)
     } catch (err: any) {
-  const errorMsg =
-    err?.response?.data?.message ||
-    err?.message ||
-    'Error al procesar la solicitud con el técnico'
-  toast.error(errorMsg)
-}
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Error al procesar la solicitud con el técnico'
+      toast.error(errorMsg)
+    }
+  }
+
+  const handleConvertToTicketSubmit = async () => {
+    try {
+      const sessionId = resolveCurrentSessionId()
+      const response = await queueToTicket({
+        session_id: sessionId
+      })
+
+      removeConversationSessionId(conversation.id)
+      setIsEscalateOpen(false)
+      setQueueResponse(null)
+      setIsWaitingInQueue(false)
+      setIsResolvedLocal(true)
+
+      toast.success(
+        response?.message || 'Se ha creado el ticket de soporte y se ha cerrado el chat.',
+        response?.ticket
+          ? {
+              description: `Ticket #${response.ticket.number || response.ticket.id}`
+            }
+          : undefined
+      )
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Error al convertir en ticket'
+      toast.error(errorMsg)
+    }
   }
 
 const handleResolveSubmit = async ({
@@ -415,11 +498,15 @@ return (
         setIsEscalateOpen(open)
         if (!open) {
           setQueueResponse(null)
+          setIsWaitingInQueue(false)
         }
       }}
       onSubmit={handleEscalateSubmit}
       isSubmitting={isEscalating}
       queueData={queueResponse}
+      isPollingQueue={isWaitingInQueue}
+      onConvertToTicket={handleConvertToTicketSubmit}
+      isConvertingToTicket={isConvertingToTicket}
       onActionSelect={(action) => {
         setIsEscalateOpen(false)
         setQueueResponse(null)
