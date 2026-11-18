@@ -169,6 +169,8 @@ export function FloatingChat({
     isNewConversationOpen,
     isLoading,
     selectConversation,
+    unselectConversation,
+    refetchConversations,
     setIsNewConversationOpen,
     handleConversationCreated
   } = useConversationsPage({
@@ -205,6 +207,45 @@ export function FloatingChat({
       activeConversationStore.set(null)
     }
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handleClosed = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          conversationId?: string | number
+        }>
+      ).detail
+
+      const targetId = detail?.conversationId ? String(detail.conversationId) : null
+      const currentActiveId = activeConversation?.id ? String(activeConversation.id) : null
+
+      if (
+        targetId &&
+        (currentActiveId === targetId || String(customActiveConversation?.id) === targetId)
+      ) {
+        setCustomActiveConversation(null)
+        unselectConversation()
+        if (currentView === 'chat') {
+          setCurrentView(effectiveCanViewChatList ? 'list' : 'home')
+        }
+      }
+      void refetchConversations()
+    }
+
+    window.addEventListener('messenger:conversation-closed', handleClosed)
+    return () => {
+      window.removeEventListener('messenger:conversation-closed', handleClosed)
+    }
+  }, [
+    activeConversation?.id,
+    customActiveConversation?.id,
+    currentView,
+    effectiveCanViewChatList,
+    unselectConversation,
+    refetchConversations
+  ])
 
   useEffect(() => {
     if (currentView === 'chat' && !activeConversation) {
@@ -485,6 +526,7 @@ export function FloatingChat({
                     onEscalateSuccess={handleEscalateSuccess}
                     onCloseSuccess={() => {
                       setCustomActiveConversation(null)
+                      unselectConversation()
                       if (effectiveCanViewChatList) {
                         setCurrentView('list')
                       } else {
@@ -493,6 +535,7 @@ export function FloatingChat({
                     }}
                     onBack={() => {
                       setCustomActiveConversation(null)
+                      unselectConversation()
                       if (effectiveCanViewChatList) {
                         setCurrentView('list')
                       } else {

@@ -26,7 +26,8 @@ const useListConversations = (props?: Props) => {
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     errors: query.errors,
-    refetch: query.refetch
+    refetch: query.refetch,
+    setData: query.setData
   }
 }
 

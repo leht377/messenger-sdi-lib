@@ -137,6 +137,7 @@ export function ConversationChatPanel({
 
   const chat = useConversationChat(conversation, {
     onCloseSuccess: () => {
+      setIsResolvedLocal(true)
       onCloseSuccess?.()
       onBack?.()
     }

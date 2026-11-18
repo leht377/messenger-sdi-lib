@@ -53,7 +53,8 @@ export const useConversationsPage = ({
     isLoading,
     isFetching,
     errors,
-    refetch: refetchConversations
+    refetch: refetchConversations,
+    setData: setRawConversations
   } = useListConversations({
     params,
     enable: Boolean(currentUserId) && hasReadPermission
@@ -133,6 +134,76 @@ export const useConversationsPage = ({
       void refetchConversations()
     }
 
+    const handleClosed = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          conversationId?: string | number
+          closed_at?: string
+          conversation?: Conversation | null
+        }>
+      ).detail
+
+      const targetId = detail?.conversationId ? String(detail.conversationId) : null
+      const closedAt = detail?.closed_at || new Date().toISOString()
+
+      // Deseleccionar si coincide con la conversación cerrada
+      if (targetId) {
+        setSelectedId((prev) => (prev === targetId ? '' : prev))
+        setIsMobileChatOpen(false)
+      }
+
+      // Limpiar o actualizar fallbackConversation
+      setFallbackConversation((prev) => {
+        if (!prev || !targetId || String(prev.id) !== targetId) return prev
+        if (closedFilter === '0') {
+          return null
+        }
+        return {
+          ...prev,
+          attributes: {
+            ...prev.attributes,
+            closed_at: closedAt
+          }
+        }
+      })
+
+      // Actualización optimista de la lista en memoria
+      if (targetId && setRawConversations) {
+        setRawConversations((prev) => {
+          if (!prev?.data?.data) return prev
+          const list = prev.data.data
+          if (closedFilter === '0') {
+            return {
+              ...prev,
+              data: {
+                ...prev.data,
+                data: list.filter((conv) => String(conv.id) !== targetId)
+              }
+            }
+          }
+          return {
+            ...prev,
+            data: {
+              ...prev.data,
+              data: list.map((conv) =>
+                String(conv.id) === targetId
+                  ? {
+                      ...conv,
+                      attributes: {
+                        ...conv.attributes,
+                        closed_at: closedAt
+                      }
+                    }
+                  : conv
+              )
+            }
+          }
+        })
+      }
+
+      void refetchConversations()
+    }
+
     const handleCreated = (event: Event) => {
       const detail = (
         event as CustomEvent<{
@@ -158,17 +229,17 @@ export const useConversationsPage = ({
     }
 
     window.addEventListener('messenger:conversation-read', handleSync)
-    window.addEventListener('messenger:conversation-closed', handleSync)
+    window.addEventListener('messenger:conversation-closed', handleClosed)
     window.addEventListener('messenger:conversation-created', handleCreated)
     window.addEventListener('messenger:conversation-updated', handleSync)
 
     return () => {
       window.removeEventListener('messenger:conversation-read', handleSync)
-      window.removeEventListener('messenger:conversation-closed', handleSync)
+      window.removeEventListener('messenger:conversation-closed', handleClosed)
       window.removeEventListener('messenger:conversation-created', handleCreated)
       window.removeEventListener('messenger:conversation-updated', handleSync)
     }
-  }, [refetchConversations])
+  }, [refetchConversations, closedFilter, setRawConversations])
 
   useEffect(() => {
     if (!currentUserId) return
@@ -248,6 +319,7 @@ return {
   currentUserId,
   selectConversation,
   unselectConversation,
+  refetchConversations,
   setIsContextPanelOpen,
   setIsNewConversationOpen,
   goBackToConversationList,

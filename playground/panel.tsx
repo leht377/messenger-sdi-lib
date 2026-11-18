@@ -22,6 +22,7 @@ export default function ConversationsPage() {
     isNewConversationOpen,
     isLoading,
     selectConversation,
+    unselectConversation,
     setIsContextPanelOpen,
     setIsNewConversationOpen,
     goBackToConversationList,
@@ -60,7 +61,8 @@ export default function ConversationsPage() {
             conversation={selectedConversation}
             isContextPanelOpen={isContextPanelOpen}
             onToggleContextPanel={() => setIsContextPanelOpen((prev) => !prev)}
-            onBack={goBackToConversationList}
+            onBack={unselectConversation}
+            onCloseSuccess={unselectConversation}
           />
         ) : (
           <ConversationEmptyState

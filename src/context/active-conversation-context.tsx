@@ -81,7 +81,10 @@ export function useActiveConversation(): ActiveConversationContextValue | null {
         if (typeof window !== 'undefined') {
           window.dispatchEvent(
             new CustomEvent('messenger:conversation-closed', {
-              detail: { conversationId: globalConversation.id }
+              detail: {
+                conversationId: String(globalConversation.id),
+                closed_at: new Date().toISOString()
+              }
             })
           )
         }

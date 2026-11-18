@@ -10,10 +10,15 @@ const useCloseConversation = () => {
   const closeConversation = useCallback(async (conversationId: string) => {
     const response = await closeConversationService(conversationId)
     removeConversationSessionId(conversationId)
+    const closedAt = new Date().toISOString()
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('messenger:conversation-closed', {
-          detail: { conversationId }
+          detail: {
+            conversationId: String(conversationId),
+            closed_at: closedAt,
+            conversation: response.data.data
+          }
         })
       )
     }
