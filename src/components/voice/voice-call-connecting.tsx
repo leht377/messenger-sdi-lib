@@ -14,7 +14,7 @@ export function VoiceCallConnecting({ statusText, onCancel }: VoiceCallConnectin
     <div className='flex flex-col flex-1'>
       <div className='flex flex-1 flex-col items-center justify-center text-center p-8 min-h-[300px]'>
         <div className='relative mb-5'>
-          <Avatar name='Asistente SDi' isBot size='xl' className='shadow-xl' />
+          <Avatar name='Asistente SDi' isBot size='xl'/>
           <span className='absolute inset-0 rounded-full bg-blue-500/15 animate-ping' />
         </div>
         <div className='flex items-center gap-2 text-sm font-bold text-neutral-800'>

@@ -10,6 +10,8 @@ export interface VoiceWaveformCanvasProps {
   height?: number | string
   /** Nodo Analyser de la API Web Audio para hacer reaccionar la onda al micrófono en vivo */
   analyserNode?: AnalyserNode | null
+  /** Nodo Analyser de salida del asistente para hacer reaccionar la onda a la voz real de la IA */
+  outputAnalyserNode?: AnalyserNode | null
   /** Nivel RMS de salida del asistente (0.0 a 1.0) para sincronizar la onda con la voz del bot */
   botRms?: number
   /** Estado del permiso del micrófono: false apaga completamente la onda */
@@ -22,6 +24,7 @@ export function VoiceWaveformCanvas({
   className = '',
   height = 72,
   analyserNode = null,
+  outputAnalyserNode = null,
   botRms = 0,
   hasPermission = null
 }: VoiceWaveformCanvasProps) {
@@ -29,6 +32,7 @@ export function VoiceWaveformCanvas({
   const animFrameRef = useRef<number | null>(null)
   const phaseRef = useRef(0)
   const freqBufferRef = useRef<Uint8Array | null>(null)
+  const botFreqBufferRef = useRef<Uint8Array | null>(null)
   const smoothedBarsRef = useRef<Float32Array | null>(null)
   const botRmsRef = useRef(botRms)
 
@@ -88,25 +92,60 @@ export function VoiceWaveformCanvas({
           drawBar(x, centerY - 1.25, 2.5, inactiveColor)
         }
       }
-      // 2. Asistente Hablando: sincronizado con el RMS real de salida PCM 24kHz
+      // 2. Asistente Hablando: reactivo a las frecuencias reales del altavoz y armónicos dinámicos
       else if (state === 'speaking') {
         const currentBotRms = botRmsRef.current
-        phaseRef.current += 0.08 + currentBotRms * 0.1
-        const activeAmp = Math.max(4, currentBotRms * 26)
+        let avgLevel = 0
+        let hasRealAudio = false
+
+        if (outputAnalyserNode) {
+          if (!botFreqBufferRef.current || botFreqBufferRef.current.length !== outputAnalyserNode.frequencyBinCount) {
+            botFreqBufferRef.current = new Uint8Array(outputAnalyserNode.frequencyBinCount)
+          }
+          const buf = botFreqBufferRef.current
+          outputAnalyserNode.getByteFrequencyData(buf as any)
+          let s = 0
+          for (let b = 0; b < buf.length; b++) {
+            s += buf[b]
+          }
+          avgLevel = s / (buf.length * 255)
+          hasRealAudio = avgLevel > 0.015
+        }
+
+        const voiceEnergy = Math.max(hasRealAudio ? avgLevel * 1.6 : 0, currentBotRms)
+        phaseRef.current += 0.09 + voiceEnergy * 0.14
+        const activeAmp = Math.max(12, voiceEnergy * 32)
         const mainColor =
-          currentBotRms > 0.03 ? 'rgba(16, 185, 129, 0.95)' : 'rgba(16, 185, 129, 0.55)'
+          voiceEnergy > 0.02 ? 'rgba(16, 185, 129, 0.95)' : 'rgba(16, 185, 129, 0.70)'
 
         for (let i = 0; i < numBars; i++) {
           const x = startX + i * (barWidth + gap)
           const norm = (i / (numBars - 1)) * 2 - 1
-          const envelope = Math.max(0.18, 1 - Math.pow(norm, 2))
+          const envelope = Math.max(0.22, 1 - Math.pow(norm, 2))
+          const distFromCenter = Math.abs(norm)
+
+          let freqBoost = 0
+          if (hasRealAudio && botFreqBufferRef.current) {
+            const buf = botFreqBufferRef.current
+            const binIndex = Math.min(
+              buf.length - 1,
+              Math.floor((1 - distFromCenter * 0.7) * (buf.length * 0.65))
+            )
+            freqBoost = (buf[binIndex] / 255) * 1.5
+          }
+
           const osc =
-            Math.sin(i * 0.42 + phaseRef.current) * 0.45 +
-            Math.cos(i * 0.28 - phaseRef.current * 0.65) * 0.35 +
-            0.4
-          const targetHeight = Math.max(2.5, activeAmp * envelope * Math.abs(osc) * 1.4)
-          smoothedBars[i] += (targetHeight - smoothedBars[i]) * 0.35
-          const barHeight = Math.max(2.5, Math.min(canvasHeight - 4, smoothedBars[i]))
+            Math.sin(i * 0.44 + phaseRef.current) * 0.45 +
+            Math.cos(i * 0.32 - phaseRef.current * 0.75) * 0.35 +
+            Math.sin(i * 0.72 + phaseRef.current * 1.1) * 0.2 +
+            0.5
+
+          const targetHeight = Math.max(
+            4.0,
+            activeAmp * (0.6 + freqBoost * 0.8) * envelope * Math.abs(osc)
+          )
+          smoothedBars[i] += (targetHeight - smoothedBars[i]) * 0.38
+          const barHeight = Math.max(3.5, Math.min(canvasHeight - 4, smoothedBars[i]))
           drawBar(x, centerY - barHeight / 2, barHeight, mainColor)
         }
       }
@@ -170,7 +209,7 @@ export function VoiceWaveformCanvas({
         cancelAnimationFrame(animFrameRef.current)
       }
     }
-  }, [state, isMuted, analyserNode, hasPermission])
+  }, [state, isMuted, analyserNode, outputAnalyserNode, hasPermission])
 
   const heightStyle = typeof height === 'number' ? `${height}px` : height
 

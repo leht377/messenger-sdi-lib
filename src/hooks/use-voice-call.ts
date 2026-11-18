@@ -48,6 +48,7 @@ export function useVoiceCall({
   const [micError, setMicError] = useState<string | null>(null)
 
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null)
+  const [outputAnalyserNode, setOutputAnalyserNode] = useState<AnalyserNode | null>(null)
   const [userRms, setUserRms] = useState(0)
   const [botRms, setBotRms] = useState(0)
 
@@ -73,6 +74,20 @@ export function useVoiceCall({
   const outcomeDataRef = useRef<Record<string, unknown> | null>(null)
   const onOpenChangeRef = useRef(onOpenChange)
   const onCallEndedRef = useRef(onCallEnded)
+
+  // Referencia al ID del mensaje actual del usuario (para actualizar interim STT en el mismo turno)
+  const activeUserMessageIdRef = useRef<string | null>(null)
+
+  // Buffer y temporizador para streaming gradual (typewriter) de los mensajes del asistente
+  const botStreamRef = useRef<{
+    id: string
+    fullTargetText: string
+    displayedLength: number
+    timestamp: string
+    isFinal: boolean
+  } | null>(null)
+  const botStreamTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const turnFinishedRef = useRef<boolean>(false)
 
   useEffect(() => {
     statusRef.current = callState
@@ -105,12 +120,146 @@ export function useVoiceCall({
     }
   }, [])
 
+  const stopBotStreamPacer = useCallback((flushImmediately = false) => {
+    if (botStreamTimerRef.current) {
+      clearInterval(botStreamTimerRef.current)
+      botStreamTimerRef.current = null
+    }
+    if (botStreamRef.current) {
+      const stream = botStreamRef.current
+      if (flushImmediately) {
+        setTranscripts((prev) => {
+          const idx = prev.findIndex((item) => item.id === stream.id)
+          if (idx !== -1) {
+            const copy = [...prev]
+            copy[idx] = {
+              ...copy[idx],
+              text: stream.fullTargetText,
+              isFinal: true
+            }
+            return copy
+          }
+          return prev
+        })
+      }
+    }
+    botStreamRef.current = null
+    turnFinishedRef.current = false
+  }, [])
+
+  const queueBotStreamText = useCallback((textChunk: string, isFinalChunk?: boolean) => {
+    const timestamp = new Date().toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+
+    // Si el turno anterior ya había terminado por onTurnComplete,
+    // garantizamos cerrar el turno previo y empezar una nueva burbuja
+    if (turnFinishedRef.current) {
+      stopBotStreamPacer(true)
+      turnFinishedRef.current = false
+    }
+
+    // Sellamos el turno activo del usuario si estaba pendiente
+    activeUserMessageIdRef.current = null
+
+    // Si no hay stream activo para el bot, creamos un NUEVO mensaje en el chat
+    if (!botStreamRef.current) {
+      const newBotId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      botStreamRef.current = {
+        id: newBotId,
+        fullTargetText: textChunk,
+        displayedLength: 0,
+        timestamp,
+        isFinal: Boolean(isFinalChunk)
+      }
+
+      setTranscripts((prev) => [
+        ...prev,
+        {
+          id: newBotId,
+          sender: 'assistant',
+          text: '',
+          timestamp,
+          isFinal: false
+        }
+      ])
+    } else {
+      botStreamRef.current.fullTargetText += textChunk
+      if (isFinalChunk) {
+        botStreamRef.current.isFinal = true
+      }
+    }
+
+    if (!botStreamTimerRef.current) {
+      botStreamTimerRef.current = setInterval(() => {
+        const stream = botStreamRef.current
+        if (!stream) {
+          if (botStreamTimerRef.current) {
+            clearInterval(botStreamTimerRef.current)
+            botStreamTimerRef.current = null
+          }
+          return
+        }
+
+        const targetLen = stream.fullTargetText.length
+        if (stream.displayedLength < targetLen) {
+          const remaining = targetLen - stream.displayedLength
+          // Streaming gradual / typewriter:
+          // A ~32ms por tick (~30-32 chars/s), adaptando velocidad según el buffer acumulado
+          const step = remaining > 100 ? 3 : remaining > 45 ? 2 : 1
+          stream.displayedLength = Math.min(targetLen, stream.displayedLength + step)
+          const currentText = stream.fullTargetText.slice(0, stream.displayedLength)
+          const isDone = stream.displayedLength >= targetLen && stream.isFinal
+
+          setTranscripts((prev) => {
+            const idx = prev.findIndex((item) => item.id === stream.id)
+            if (idx === -1) return prev
+            const copy = [...prev]
+            copy[idx] = {
+              ...copy[idx],
+              text: currentText,
+              isFinal: isDone
+            }
+            return copy
+          })
+
+          if (isDone) {
+            if (botStreamTimerRef.current) {
+              clearInterval(botStreamTimerRef.current)
+              botStreamTimerRef.current = null
+            }
+            botStreamRef.current = null
+            turnFinishedRef.current = false
+          }
+        } else if (stream.isFinal) {
+          setTranscripts((prev) => {
+            const idx = prev.findIndex((item) => item.id === stream.id)
+            if (idx !== -1 && !prev[idx].isFinal) {
+              const copy = [...prev]
+              copy[idx] = { ...copy[idx], isFinal: true }
+              return copy
+            }
+            return prev
+          })
+          if (botStreamTimerRef.current) {
+            clearInterval(botStreamTimerRef.current)
+            botStreamTimerRef.current = null
+          }
+          botStreamRef.current = null
+          turnFinishedRef.current = false
+        }
+      }, 32)
+    }
+  }, [stopBotStreamPacer])
+
   const closeModalSafely = useCallback(
     (overrideOutcome?: string, overrideData?: Record<string, unknown> | null) => {
       if (isModalClosingRef.current) return
       isModalClosingRef.current = true
 
       stopTimer()
+      stopBotStreamPacer(false)
       clientRef.current?.cleanup()
       clientRef.current = null
 
@@ -123,7 +272,7 @@ export function useVoiceCall({
       })
       onOpenChangeRef.current?.(false)
     },
-    [stopTimer]
+    [stopTimer, stopBotStreamPacer]
   )
 
   useEffect(() => {
@@ -131,9 +280,13 @@ export function useVoiceCall({
       clientRef.current?.cleanup()
       clientRef.current = null
       stopTimer()
+      stopBotStreamPacer(false)
+      activeUserMessageIdRef.current = null
+      turnFinishedRef.current = false
       setCallState('idle')
       setIsMinimized(false)
       setAnalyserNode(null)
+      setOutputAnalyserNode(null)
       setUserRms(0)
       setBotRms(0)
       return
@@ -145,6 +298,9 @@ export function useVoiceCall({
     setStatusText('Conectando con el Asistente de Voz...')
     setDurationSeconds(0)
     setTranscripts([])
+    stopBotStreamPacer(false)
+    activeUserMessageIdRef.current = null
+    turnFinishedRef.current = false
     setCallerContext(null)
     setMatchedArticle(null)
     setActiveTool(null)
@@ -196,31 +352,61 @@ export function useVoiceCall({
             statusRef.current = 'thinking'
             setStatusText('Procesando consulta...')
           }
+
+          // Si el bot estaba aún en streaming, sellamos su mensaje de inmediato para no mezclar turnos
+          stopBotStreamPacer(true)
+          turnFinishedRef.current = false
+
           const timestamp = new Date().toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit'
           })
-          setTranscripts((prev) => {
-            if (prev.length > 0 && prev[prev.length - 1].sender === 'user') {
-              const copy = [...prev]
-              copy[copy.length - 1] = {
-                ...copy[copy.length - 1],
-                text,
-                isFinal: isFinal ?? true
-              }
-              return copy
-            }
-            return [
+
+          if (!activeUserMessageIdRef.current) {
+            // Nuevo turno del usuario: se genera una nueva burbuja en el chat
+            const newUserId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+            activeUserMessageIdRef.current = newUserId
+            setTranscripts((prev) => [
               ...prev,
               {
-                id: `user-${Date.now()}`,
+                id: newUserId,
                 sender: 'user',
                 text,
                 timestamp,
                 isFinal: isFinal ?? true
               }
-            ]
-          })
+            ])
+          } else {
+            // Se actualiza el reconocimiento provisional del mismo turno en curso
+            const currentUserId = activeUserMessageIdRef.current
+            setTranscripts((prev) => {
+              const idx = prev.findIndex((item) => item.id === currentUserId)
+              if (idx !== -1) {
+                const copy = [...prev]
+                copy[idx] = {
+                  ...copy[idx],
+                  text,
+                  isFinal: isFinal ?? true
+                }
+                return copy
+              }
+              return [
+                ...prev,
+                {
+                  id: currentUserId,
+                  sender: 'user',
+                  text,
+                  timestamp,
+                  isFinal: isFinal ?? true
+                }
+              ]
+            })
+          }
+
+          // Si el turno del usuario quedó sellado, reseteamos la ref para que el próximo turno cree un NUEVO mensaje
+          if (isFinal) {
+            activeUserMessageIdRef.current = null
+          }
         },
         onTranscriptBot: (textChunk, isFinal) => {
           if (statusRef.current !== 'escalating' && statusRef.current !== 'resolved') {
@@ -228,35 +414,7 @@ export function useVoiceCall({
             statusRef.current = 'speaking'
             setStatusText('Asistente respondiendo...')
           }
-          const timestamp = new Date().toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit'
-          })
-          setTranscripts((prev) => {
-            if (
-              prev.length > 0 &&
-              prev[prev.length - 1].sender === 'assistant' &&
-              prev[prev.length - 1].isFinal !== true
-            ) {
-              const copy = [...prev]
-              copy[copy.length - 1] = {
-                ...copy[copy.length - 1],
-                text: copy[copy.length - 1].text + textChunk,
-                isFinal: Boolean(isFinal)
-              }
-              return copy
-            }
-            return [
-              ...prev,
-              {
-                id: `bot-${Date.now()}`,
-                sender: 'assistant',
-                text: textChunk,
-                timestamp,
-                isFinal: Boolean(isFinal)
-              }
-            ]
-          })
+          queueBotStreamText(textChunk, isFinal)
         },
         onAssistantSpeaking: () => {
           if (statusRef.current !== 'escalating' && statusRef.current !== 'resolved') {
@@ -266,16 +424,13 @@ export function useVoiceCall({
           }
         },
         onTurnComplete: () => {
-          setTranscripts((prev) => {
-            if (prev.length === 0) return prev
-            const last = prev[prev.length - 1]
-            if (last.sender === 'assistant' && !last.isFinal) {
-              const copy = [...prev]
-              copy[copy.length - 1] = { ...last, isFinal: true }
-              return copy
+          turnFinishedRef.current = true
+          if (botStreamRef.current) {
+            botStreamRef.current.isFinal = true
+            if (botStreamRef.current.displayedLength >= botStreamRef.current.fullTargetText.length) {
+              stopBotStreamPacer(true)
             }
-            return prev
-          })
+          }
           if (
             statusRef.current !== 'ended' &&
             statusRef.current !== 'escalating' &&
@@ -324,6 +479,29 @@ export function useVoiceCall({
           showNotice('Guía con pasos enviada al chat de Messenger', 5000)
         },
         onBargeIn: () => {
+          if (botStreamRef.current) {
+            const stream = botStreamRef.current
+            if (botStreamTimerRef.current) {
+              clearInterval(botStreamTimerRef.current)
+              botStreamTimerRef.current = null
+            }
+            setTranscripts((prev) => {
+              const idx = prev.findIndex((item) => item.id === stream.id)
+              if (idx !== -1) {
+                const copy = [...prev]
+                copy[idx] = {
+                  ...copy[idx],
+                  text: stream.fullTargetText.slice(0, stream.displayedLength),
+                  isFinal: true
+                }
+                return copy
+              }
+              return prev
+            })
+            botStreamRef.current = null
+          }
+          turnFinishedRef.current = false
+          activeUserMessageIdRef.current = null
           setCallState('listening')
           statusRef.current = 'listening'
           setStatusText('Te escucho...')
@@ -362,6 +540,7 @@ export function useVoiceCall({
         },
         onFinalized: (payload) => {
           stopTimer()
+          stopBotStreamPacer(true)
           setFinalizedData(payload)
           if (payload.outcome) {
             setOutcomeType(payload.outcome)
@@ -387,6 +566,7 @@ export function useVoiceCall({
         onClose: () => {
           if (statusRef.current !== 'ended') {
             stopTimer()
+            stopBotStreamPacer(true)
             setCallState('ended')
             statusRef.current = 'ended'
             setIsMinimized(false)
@@ -399,7 +579,8 @@ export function useVoiceCall({
         }
       },
       {
-        onAnalyserReady: (node) => setAnalyserNode(node)
+        onAnalyserReady: (node) => setAnalyserNode(node),
+        onOutputAnalyserReady: (node) => setOutputAnalyserNode(node)
       }
     )
 
@@ -416,6 +597,7 @@ export function useVoiceCall({
         clientRef.current = null
       }
       stopTimer()
+      stopBotStreamPacer(false)
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current)
     }
   }, [
@@ -429,6 +611,8 @@ export function useVoiceCall({
     chatContext?.config?.voiceWsUrl,
     chatContext?.config?.apiBaseUrl,
     stopTimer,
+    stopBotStreamPacer,
+    queueBotStreamText,
     showNotice
   ])
 
@@ -515,6 +699,10 @@ export function useVoiceCall({
       const trimmed = textInput.trim()
       if (!trimmed || !clientRef.current) return
 
+      stopBotStreamPacer(true)
+      activeUserMessageIdRef.current = null
+      turnFinishedRef.current = false
+
       clientRef.current.sendTextPrompt(trimmed)
       const timestamp = new Date().toLocaleTimeString([], {
         hour: '2-digit',
@@ -523,7 +711,7 @@ export function useVoiceCall({
       setTranscripts((prev) => [
         ...prev,
         {
-          id: `user-txt-${Date.now()}`,
+          id: `user-txt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           sender: 'user',
           text: trimmed,
           timestamp,
@@ -532,7 +720,7 @@ export function useVoiceCall({
       ])
       setTextInput('')
     },
-    [textInput]
+    [textInput, stopBotStreamPacer]
   )
 
   const handleCaptureScreen = useCallback(async () => {
@@ -645,6 +833,7 @@ export function useVoiceCall({
     hasPermission,
     micError,
     analyserNode,
+    outputAnalyserNode,
     userRms,
     botRms,
     activeVUSegments,

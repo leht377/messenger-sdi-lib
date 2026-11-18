@@ -12,6 +12,7 @@ export interface VoiceAudioVisualizerCardProps {
   isMuted: boolean
   hasPermission: boolean | null
   analyserNode: AnalyserNode | null
+  outputAnalyserNode?: AnalyserNode | null
   userRms: number
   botRms: number
   activeVUSegments: number
@@ -25,6 +26,7 @@ export function VoiceAudioVisualizerCard({
   isMuted,
   hasPermission,
   analyserNode,
+  outputAnalyserNode = null,
   userRms,
   botRms,
   activeVUSegments,
@@ -82,6 +84,7 @@ export function VoiceAudioVisualizerCard({
           isMuted={isMuted}
           height={36}
           analyserNode={analyserNode}
+          outputAnalyserNode={outputAnalyserNode}
           botRms={botRms}
           hasPermission={hasPermission}
         />

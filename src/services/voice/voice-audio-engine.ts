@@ -3,12 +3,13 @@ import { createPcmWorkletModuleUrl } from './pcm-worklet.inline'
 export interface VoiceAudioEngineOptions {
   onPcmChunk?: (buffer: ArrayBuffer, rms: number) => void
   onAnalyserReady?: (analyser: AnalyserNode | null) => void
+  onOutputAnalyserReady?: (analyser: AnalyserNode | null) => void
 }
 
 /**
  * Motor Web Audio API autónomo para llamadas full-duplex:
  * - Entrada: Captura de micrófono con downsampling a 16,000 Hz Mono Int16 (AudioWorklet + fallback ScriptProcessor).
- * - Salida: Reproducción secuencial de PCM 24,000 Hz Int16 sin cortes ni solapamientos.
+ * - Salida: Reproducción secuencial de PCM 24,000 Hz Int16 sin cortes ni solapamientos con AnalyserNode de salida en vivo.
  * - Barge-in instantáneo (< 20 ms) y drenado seguro de despedida.
  */
 export class VoiceAudioEngine {
@@ -16,6 +17,7 @@ export class VoiceAudioEngine {
   private outputAudioCtx: AudioContext | null = null
   private mediaStream: MediaStream | null = null
   private analyserNode: AnalyserNode | null = null
+  private outputAnalyserNode: AnalyserNode | null = null
   private workletNode: AudioWorkletNode | null = null
   private scriptProcessor: ScriptProcessorNode | null = null
   private silentGain: GainNode | null = null
@@ -35,11 +37,27 @@ export class VoiceAudioEngine {
     return this.analyserNode
   }
 
+  public getOutputAnalyserNode(): AnalyserNode | null {
+    return this.outputAnalyserNode
+  }
+
   public getLevelsAndDecay(): { userRms: number; botRms: number } {
     const userRms = this.isMuted ? 0 : this.latestUserRms
-    const botRms = this.latestBotRms
+    let botRms = this.latestBotRms
+
+    if (this.outputAnalyserNode) {
+      const freqData = new Uint8Array(this.outputAnalyserNode.frequencyBinCount)
+      this.outputAnalyserNode.getByteFrequencyData(freqData)
+      let sum = 0
+      for (let i = 0; i < freqData.length; i++) {
+        sum += freqData[i]
+      }
+      const liveBotLevel = sum / (freqData.length * 255)
+      botRms = Math.max(botRms, liveBotLevel)
+    }
+
     this.latestUserRms *= 0.85
-    this.latestBotRms *= 0.85
+    this.latestBotRms *= 0.90
     return { userRms, botRms }
   }
 
@@ -81,6 +99,14 @@ export class VoiceAudioEngine {
       this.dispose()
       return
     }
+
+    // AnalyserNode exclusivo para visualización reactiva a 60 FPS de la voz del asistente
+    const outAnalyser = this.outputAudioCtx.createAnalyser()
+    outAnalyser.fftSize = 64
+    outAnalyser.smoothingTimeConstant = 0.65
+    outAnalyser.connect(this.outputAudioCtx.destination)
+    this.outputAnalyserNode = outAnalyser
+    this.options.onOutputAnalyserReady?.(outAnalyser)
 
     if (this.outputAudioCtx) {
       this.nextPlayTime = this.outputAudioCtx.currentTime
@@ -268,7 +294,11 @@ export class VoiceAudioEngine {
 
     const source = this.outputAudioCtx.createBufferSource()
     source.buffer = audioBuffer
-    source.connect(this.outputAudioCtx.destination)
+    if (this.outputAnalyserNode) {
+      source.connect(this.outputAnalyserNode)
+    } else {
+      source.connect(this.outputAudioCtx.destination)
+    }
 
     const curTime = this.outputAudioCtx.currentTime
     const startTime = Math.max(curTime, this.nextPlayTime)
@@ -385,6 +415,16 @@ export class VoiceAudioEngine {
     if (this.inputAudioCtx && this.inputAudioCtx.state !== 'closed') {
       this.inputAudioCtx.close().catch(() => {})
       this.inputAudioCtx = null
+    }
+
+    if (this.outputAnalyserNode) {
+      try {
+        this.outputAnalyserNode.disconnect()
+      } catch {
+        // Ignorar
+      }
+      this.outputAnalyserNode = null
+      this.options.onOutputAnalyserReady?.(null)
     }
 
     if (this.outputAudioCtx && this.outputAudioCtx.state !== 'closed') {

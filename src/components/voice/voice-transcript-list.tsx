@@ -111,7 +111,7 @@ export function VoiceTranscriptList({
       )}
 
       {/* Contenedor relativo para albergar el scroll y el botón flotante de bajar / nuevo mensaje */}
-      <div className='relative flex-1 min-h-[160px] max-h-[250px] flex flex-col'>
+      <div className='relative flex-1 min-h-[160px] max-h-[290px] flex flex-col'>
         <div
           ref={scrollRef}
           onScroll={handleScroll}
@@ -175,6 +175,9 @@ export function VoiceTranscriptList({
                     >
                       <p className='whitespace-pre-wrap break-words'>
                         {item.text}
+                        {isBot && !item.isFinal && (
+                          <span className='inline-block w-1.5 h-3 ml-1 bg-violet-500/70 align-middle animate-pulse rounded-xs' />
+                        )}
                       </p>
                       <div
                         className={

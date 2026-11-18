@@ -123,7 +123,7 @@ export function BtnCloseConversation({
                 setIsConfirmOpen(false)
                 onCloseConversation?.()
               }}
-              className='text-xs h-8 bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer'
+              className='text-xs ms-2 h-8 bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer'
             >
               Sí, cerrar conversación
             </AlertDialogAction>

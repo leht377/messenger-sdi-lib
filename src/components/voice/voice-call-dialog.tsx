@@ -87,6 +87,7 @@ export function VoiceCallDialog({
                 isMuted={voice.isMuted}
                 hasPermission={voice.hasPermission}
                 analyserNode={voice.analyserNode}
+                outputAnalyserNode={voice.outputAnalyserNode}
                 userRms={voice.userRms}
                 botRms={voice.botRms}
                 activeVUSegments={voice.activeVUSegments}

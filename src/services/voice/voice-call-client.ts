@@ -7,6 +7,7 @@ import { VoiceAudioEngine } from './voice-audio-engine'
 
 export interface VoiceCallClientOptions {
   onAnalyserReady?: (analyser: AnalyserNode | null) => void
+  onOutputAnalyserReady?: (analyser: AnalyserNode | null) => void
 }
 
 /**
@@ -28,6 +29,7 @@ export class VoiceCallClient {
   ) {
     this.audioEngine = new VoiceAudioEngine({
       onAnalyserReady: options.onAnalyserReady,
+      onOutputAnalyserReady: options.onOutputAnalyserReady,
       onPcmChunk: (buffer) => {
         if (this.connected && this.ws?.readyState === WebSocket.OPEN) {
           this.ws.send(buffer)
@@ -42,6 +44,10 @@ export class VoiceCallClient {
 
   public getAnalyserNode(): AnalyserNode | null {
     return this.audioEngine.getAnalyserNode()
+  }
+
+  public getOutputAnalyserNode(): AnalyserNode | null {
+    return this.audioEngine.getOutputAnalyserNode()
   }
 
   public async start(): Promise<void> {
