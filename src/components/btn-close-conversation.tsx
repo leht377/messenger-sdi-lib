@@ -49,7 +49,7 @@ export function BtnCloseConversation({
     return (
       <div
         className={cn(
-          'inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200/90 dark:border-neutral-700/80 bg-neutral-100/60 dark:bg-neutral-800/60 px-2.5 sm:px-3 text-xs font-medium text-neutral-500 dark:text-neutral-400 select-none shadow-2xs',
+          'inline-flex h-8 items-center gap-1.5 rounded-lg border-none dark:border-neutral-700/80 bg-neutral-100/60 dark:bg-neutral-800/60 px-2.5 sm:px-3 text-xs font-medium text-neutral-500 dark:text-neutral-400 select-none ',
           className
         )}
       >
@@ -76,7 +76,7 @@ export function BtnCloseConversation({
         title='Cerrar y marcar conversación como resuelta'
         aria-label='Cerrar conversación'
         className={cn(
-          'group inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200/90 dark:border-neutral-700/80 bg-white dark:bg-neutral-800/90 px-2.5 sm:px-3 text-xs font-semibold text-neutral-700 dark:text-neutral-200 shadow-2xs transition-all hover:border-emerald-300 dark:hover:border-emerald-700/70 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 hover:text-emerald-700 dark:hover:text-emerald-300 active:scale-[0.98] cursor-pointer disabled:pointer-events-none disabled:opacity-50',
+          'group inline-flex h-8 items-center gap-1.5 rounded-lg border-none dark:border-neutral-700/80 bg-white dark:bg-neutral-800/90 px-2.5 sm:px-3 text-xs font-semibold text-neutral-700 dark:text-neutral-200 transition-all hover:border-emerald-300 dark:hover:border-emerald-700/70 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 hover:text-emerald-700 dark:hover:text-emerald-300 active:scale-[0.98] cursor-pointer disabled:pointer-events-none disabled:opacity-50',
           className
         )}
         {...props}
@@ -107,15 +107,14 @@ export function BtnCloseConversation({
             </div>
             <AlertDialogDescription className='text-xs leading-relaxed text-neutral-500 dark:text-neutral-400'>
               ¿Estás seguro de que deseas marcar como resuelta y cerrar la conversación con{' '}
-              <strong className='font-semibold text-neutral-900 dark:text-neutral-100'>{conversationName}</strong>?
-              Esta acción finalizará la atención en tiempo real.
+              <strong className='font-semibold text-neutral-900 dark:text-neutral-100'>
+                {conversationName}
+              </strong>
+              ? Esta acción finalizará la atención en tiempo real.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className='gap-2 sm:gap-0 mt-3'>
-            <AlertDialogCancel
-              disabled={isClosing}
-              className='text-xs h-8 cursor-pointer'
-            >
+            <AlertDialogCancel disabled={isClosing} className='text-xs h-8 cursor-pointer'>
               Cancelar
             </AlertDialogCancel>
             <AlertDialogAction

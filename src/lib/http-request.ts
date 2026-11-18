@@ -3,11 +3,11 @@ import type { ResponseAPI } from '../types/api.types'
 
 interface ChatHttpConfig {
   apiBaseUrl: string
+  apiHelpdeskBaseUrl?: string
   authToken: string
 }
 
-interface HttpRequestProps
-  extends Omit<AxiosRequestConfig, 'data' | 'params' | 'url' | 'method'> {
+interface HttpRequestProps extends Omit<AxiosRequestConfig, 'data' | 'params' | 'url' | 'method'> {
   data?: unknown
   url: string
   params?: object
@@ -36,6 +36,31 @@ export const chatApiUrl = (service: string, version: string) => {
   return `${baseUrl}/${service}/api/${version}`
 }
 
+const isIpAddress = (value: string): boolean => {
+  try {
+    const hostname = new URL(value.includes('://') ? value : `http://${value}`).hostname
+
+    const ipRegex = /^(?:\d{1,3}\.){3}\d{1,3}$/
+
+    return ipRegex.test(hostname) && hostname.split('.').every((octet) => Number(octet) <= 255)
+  } catch {
+    return false
+  }
+}
+
+export const helpdeskApiUrl = (service: string, version: string) => {
+  if (!chatHttpConfig) {
+    throw new Error('El cliente HTTP del chat no ha sido configurado')
+  }
+
+  const baseUrl = chatHttpConfig.apiHelpdeskBaseUrl
+    ? chatHttpConfig.apiHelpdeskBaseUrl.replace(/\/+$/, '')
+    : chatHttpConfig.apiBaseUrl.replace(/\/+$/, '')
+
+  if (isIpAddress(baseUrl)) return `${baseUrl}/${service}/api/${version}`
+  return `${baseUrl}/api/${version}`
+}
+
 export const httpRequest = async <TResponse>({
   data,
   url,
@@ -57,9 +82,7 @@ export const httpRequest = async <TResponse>({
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       Accept: 'application/json',
-      ...(chatHttpConfig.authToken
-        ? { Authorization: `Bearer ${chatHttpConfig.authToken}` }
-        : {}),
+      ...(chatHttpConfig.authToken ? { Authorization: `Bearer ${chatHttpConfig.authToken}` } : {}),
       ...headers
     }
   }

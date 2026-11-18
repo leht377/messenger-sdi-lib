@@ -14,6 +14,7 @@ const App = () => {
   const config: ChatConfig = useMemo(() => ({
     apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://172.16.30.114',
     authToken: import.meta.env.VITE_AUTH_TOKEN || '',
+    apiHelpdeskBaseUrl: import.meta.env.VITE_API_HELPDESK_BASE_URL ,
     applicationId: Number(import.meta.env.VITE_APPLICATION_ID) || 10,
     reverb: {
       key: import.meta.env.VITE_REVERB_KEY || '',

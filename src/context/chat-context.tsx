@@ -8,6 +8,7 @@ import { configureChatHttp } from '../lib/http-request'
 
 export interface ChatConfig {
   apiBaseUrl: string
+ 
   authToken: string
   applicationId: string | number
   /**
@@ -20,6 +21,11 @@ export interface ChatConfig {
    * Si no se especifica, se deriva automáticamente desde `apiBaseUrl`.
    */
   voiceWsUrl?: string
+  /**
+   * URL de la api de helpdesk 
+   * Si no se especifica, se deriva automáticamente desde `apiBaseUrl`.
+   */
+  apiHelpdeskBaseUrl?:string
   reverb: {
     key: string
     host: string
@@ -80,7 +86,7 @@ function getConfigError(config: ChatConfig): Error | null {
 }
 
 export function ChatProvider({ config, children }: ChatProviderProps) {
-  const { authToken, apiBaseUrl, applicationId, reverb } = config
+  const { authToken, apiBaseUrl, applicationId, reverb, apiHelpdeskBaseUrl } = config
 
   // Se memoiza con valores primitivos para que no se recalcule si el anfitrión
   // recrea el objeto `config` en cada render.
@@ -94,7 +100,8 @@ export function ChatProvider({ config, children }: ChatProviderProps) {
       reverb?.host,
       reverb?.port,
       reverb?.wsPath,
-      reverb?.scheme
+      reverb?.scheme,
+      apiHelpdeskBaseUrl
     ]
   )
 
@@ -124,7 +131,8 @@ export function ChatProvider({ config, children }: ChatProviderProps) {
 
     configureChatHttp({
       apiBaseUrl,
-      authToken
+      authToken,
+      apiHelpdeskBaseUrl: apiHelpdeskBaseUrl
     })
 
     const loadCurrentUser = async () => {

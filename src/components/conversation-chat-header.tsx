@@ -1,12 +1,7 @@
 'use client'
 
 import React from 'react'
-import {
-  Avatar,
-  Badge,
-  Button,
-  cn
-} from '../ui'
+import { Avatar, Badge, Button, cn } from '../ui'
 import { Info, ArrowLeft, Lock, Sparkles, Phone } from 'lucide-react'
 import type { Conversation } from '../types/conversation.types'
 import {
@@ -130,7 +125,7 @@ export function ConversationChatHeader({
             onClick={onStartVoiceCall}
             title='Llamar al Asistente de Voz (Interactivo)'
             aria-label='Llamar al Asistente de Voz'
-            className='group inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200/90 dark:border-neutral-700/80 bg-white dark:bg-neutral-800/90 px-2.5 sm:px-3 text-xs font-semibold text-neutral-700 dark:text-neutral-200 shadow-2xs transition-all hover:border-emerald-300 dark:hover:border-emerald-700/70 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 hover:text-emerald-700 dark:hover:text-emerald-300 active:scale-[0.98] cursor-pointer'
+            className='group inline-flex h-8 items-center gap-1.5 rounded-lg border-none dark:border-neutral-700/80 bg-white dark:bg-neutral-800/90 px-2.5 sm:px-3 text-xs font-semibold text-neutral-700 dark:text-neutral-200 transition-all hover:border-emerald-300 dark:hover:border-emerald-700/70 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 hover:text-emerald-700 dark:hover:text-emerald-300 active:scale-[0.98] cursor-pointer'
           >
             <Phone className='size-3.5 text-emerald-600 dark:text-emerald-400 transition-transform duration-200 group-hover:scale-110' />
             <span className='tracking-tight'>Llamar</span>

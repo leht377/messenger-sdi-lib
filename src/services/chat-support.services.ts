@@ -1,4 +1,4 @@
-import { chatApiUrl, httpRequest } from '../lib/http-request'
+import { chatApiUrl, helpdeskApiUrl, httpRequest } from '../lib/http-request'
 import {
   ChatBotQueueStatusResponse,
   ChatBotQueueToTicketPayload,
@@ -13,7 +13,7 @@ import {
 
 export const requestChatSupportService = (data: RequestChatSupportPayload) =>
   httpRequest<RequestChatSupportResponse>({
-    url: `${chatApiUrl('helpdesk', 'v1')}/requests/chat-support`,
+    url: `${helpdeskApiUrl('helpdesk', 'v1')}/requests/chat-support`,
     method: 'POST',
     data
   })
@@ -24,7 +24,7 @@ const ESCALATE_PREVIEW_URL =
 
 export const escalateChatSupportService = (data: EscalateChatSupportPayload) =>
   httpRequest<EscalateChatSupportResponse>({
-    url: ESCALATE_PREVIEW_URL,
+    url:  `${helpdeskApiUrl('helpdesk', 'v1')}/chat-bot/escalate`,
     method: 'POST',
     data
   })
@@ -35,7 +35,7 @@ const RESOLVE_PREVIEW_URL =
 
 export const resolveChatSupportService = (data: ResolveChatSupportPayload) =>
   httpRequest<ResolveChatSupportResponse>({
-    url: RESOLVE_PREVIEW_URL,
+    url:  `${helpdeskApiUrl('helpdesk', 'v1')}/chat-bot/resolve`,
     method: 'POST',
     data
   })
@@ -46,7 +46,7 @@ const QUEUE_STATUS_PREVIEW_URL =
 
 export const chatBotQueueStatusService = (sessionId: string) =>
   httpRequest<ChatBotQueueStatusResponse>({
-    url: QUEUE_STATUS_PREVIEW_URL,
+    url:  `${helpdeskApiUrl('helpdesk', 'v1')}/chat-bot/queue-status`,
     method: 'GET',
     params: {
       session_id: sessionId
@@ -59,7 +59,7 @@ const QUEUE_TO_TICKET_PREVIEW_URL =
 
 export const chatBotQueueToTicketService = (data: ChatBotQueueToTicketPayload) =>
   httpRequest<ChatBotQueueToTicketResponse>({
-    url: QUEUE_TO_TICKET_PREVIEW_URL,
+    url:  `${helpdeskApiUrl('helpdesk', 'v1')}/chat-bot/queue-to-ticket`,
     method: 'POST',
     params: {
       session_id: data.session_id
