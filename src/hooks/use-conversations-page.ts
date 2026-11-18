@@ -97,27 +97,27 @@ export const useConversationsPage = ({
         currentUserId && String(event.message.sender_id) !== String(currentUserId)
 
       const isFocused =
-      isActive && String(event.conversation_id) === String(selectedId)
+        isActive && String(event.conversation_id) === String(selectedId)
 
       if (isFromOtherUser) {
         playNotificationSound(isFocused ? 'focused' : 'unfocused')
-      }
 
-      if (showToastOnUnread && !isFocused) {
-        toast.info('Nuevo mensaje', {
-          id: `conversation-message-${event.message.id}`,
-          description: event.message.body || 'Tienes un mensaje nuevo',
-          action: {
-            label: 'Abrir',
-            onClick: () => {
-              setSelectedId(String(event.conversation_id))
-              setIsMobileChatOpen(true)
+        if (showToastOnUnread && !isFocused) {
+          toast.info('Nuevo mensaje', {
+            id: `conversation-message-${event.message.id}`,
+            description: event.message.body || 'Tienes un mensaje nuevo',
+            action: {
+              label: 'Abrir',
+              onClick: () => {
+                setSelectedId(String(event.conversation_id))
+                setIsMobileChatOpen(true)
+              }
             }
-          }
-        })
-      }
+          })
+        }
 
-      void refetchConversations()
+        void refetchConversations()
+      }
     },
     [currentUserId, isActive, refetchConversations, selectedId, showToastOnUnread]
   )
@@ -132,6 +132,38 @@ export const useConversationsPage = ({
 
     const handleSync = () => {
       void refetchConversations()
+    }
+
+    const handleRead = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          conversationId?: string | number
+        }>
+      ).detail
+
+      const targetId = detail?.conversationId ? String(detail.conversationId) : null
+      if (targetId && setRawConversations) {
+        setRawConversations((prev) => {
+          if (!prev?.data?.data) return prev
+          return {
+            ...prev,
+            data: {
+              ...prev.data,
+              data: prev.data.data.map((conv) =>
+                String(conv.id) === targetId
+                  ? {
+                      ...conv,
+                      attributes: {
+                        ...conv.attributes,
+                        unread_count: 0
+                      }
+                    }
+                  : conv
+              )
+            }
+          }
+        })
+      }
     }
 
     const handleClosed = (event: Event) => {
@@ -228,13 +260,13 @@ export const useConversationsPage = ({
       void refetchConversations()
     }
 
-    window.addEventListener('messenger:conversation-read', handleSync)
+    window.addEventListener('messenger:conversation-read', handleRead)
     window.addEventListener('messenger:conversation-closed', handleClosed)
     window.addEventListener('messenger:conversation-created', handleCreated)
     window.addEventListener('messenger:conversation-updated', handleSync)
 
     return () => {
-      window.removeEventListener('messenger:conversation-read', handleSync)
+      window.removeEventListener('messenger:conversation-read', handleRead)
       window.removeEventListener('messenger:conversation-closed', handleClosed)
       window.removeEventListener('messenger:conversation-created', handleCreated)
       window.removeEventListener('messenger:conversation-updated', handleSync)

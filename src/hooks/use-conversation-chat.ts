@@ -268,13 +268,17 @@ export const useConversationChat = (
     return () => {
       if (markReadTimerRef.current) {
         clearTimeout(markReadTimerRef.current)
+        markReadTimerRef.current = null
       }
       if (typingTimerRef.current) {
         clearTimeout(typingTimerRef.current)
+        typingTimerRef.current = null
       }
       if (outgoingTypingTimerRef.current) {
         clearTimeout(outgoingTypingTimerRef.current)
+        outgoingTypingTimerRef.current = null
       }
+      setTypingUser(null)
     }
   }, [conversation.id])
 
@@ -303,6 +307,11 @@ export const useConversationChat = (
 
       if (isFromOtherUser) {
         playNotificationSound('focused')
+        if (typingTimerRef.current) {
+          clearTimeout(typingTimerRef.current)
+          typingTimerRef.current = null
+        }
+        setTypingUser(null)
       }
 
       scheduleMarkAsRead()
@@ -325,219 +334,218 @@ export const useConversationChat = (
       }
 
       setTypingUser(event.user.name)
+      // Mantener activo mientras is_typing sea true, con timeout de seguridad de 1 minuto (60.000 ms) para apagarlo automáticamente
       typingTimerRef.current = setTimeout(() => {
         typingTimerRef.current = null
         setTypingUser(null)
-      }, 2000)
-    },
-    [currentUserId]
+    }, 60000)
+},
+  [currentUserId]
   )
 
-  const sendTypingStatus = useCallback(
-    (isTyping: boolean) => {
-      if (!conversation.id || !currentUserId || isTypingRef.current === isTyping) {
-        return
-      }
-
-      isTypingRef.current = isTyping
-      updateConversationTypingRef.current({
-        conversationId: conversation.id,
-        user_id: Number(currentUserId),
-        is_typing: isTyping
-      })
-    },
-    [conversation.id, currentUserId]
-  )
-
-  const scheduleTypingStop = useCallback(() => {
-    if (outgoingTypingTimerRef.current) {
-      clearTimeout(outgoingTypingTimerRef.current)
+const sendTypingStatus = useCallback(
+  (isTyping: boolean) => {
+    if (!conversation.id || !currentUserId || isTypingRef.current === isTyping) {
+      return
     }
 
-    outgoingTypingTimerRef.current = setTimeout(() => {
-      outgoingTypingTimerRef.current = null
-      sendTypingStatus(false)
-    }, 2500)
-  }, [sendTypingStatus])
+    isTypingRef.current = isTyping
+    updateConversationTypingRef.current({
+      conversationId: conversation.id,
+      user_id: Number(currentUserId),
+      is_typing: isTyping
+    })
+  },
+  [conversation.id, currentUserId]
+)
 
-  const handleInputTextChange = useCallback(
-    (text: string) => {
-      if (isClosed) return
-      setInputText(text)
-      if (!text.trim()) {
-        if (outgoingTypingTimerRef.current) {
-          clearTimeout(outgoingTypingTimerRef.current)
-          outgoingTypingTimerRef.current = null
-        }
-        sendTypingStatus(false)
-        return
-      }
+const scheduleTypingStop = useCallback(() => {
+  if (outgoingTypingTimerRef.current) {
+    clearTimeout(outgoingTypingTimerRef.current)
+  }
 
-      sendTypingStatus(true)
-      scheduleTypingStop()
-    },
-    [isClosed, scheduleTypingStop, sendTypingStatus]
-  )
+  outgoingTypingTimerRef.current = setTimeout(() => {
+    outgoingTypingTimerRef.current = null
+    sendTypingStatus(false)
+  }, 2500)
+}, [sendTypingStatus])
 
-  useEffect(() => {
-    return () => {
+const handleInputTextChange = useCallback(
+  (text: string) => {
+    if (isClosed) return
+    setInputText(text)
+    if (!text.trim()) {
       if (outgoingTypingTimerRef.current) {
         clearTimeout(outgoingTypingTimerRef.current)
         outgoingTypingTimerRef.current = null
       }
       sendTypingStatus(false)
-    }
-  }, [conversation.id, sendTypingStatus])
-
-  const markConversationAsReadIfNeeded = () => {
-    if (!conversation.attributes.unread_count) return
-    scheduleMarkAsRead()
-  }
-
-  useEffect(() => {
-    markConversationAsReadIfNeeded()
-  }, [conversation, messages, scheduleMarkAsRead])
-
-  // Sincronizar o limpiar session_uuid asociado a la conversación en localStorage
-  useEffect(() => {
-    if (!conversation.id) return
-
-    if (isClosed) {
-      removeConversationSessionId(conversation.id)
       return
     }
 
-    if (getConversationSessionId(conversation.id)) return
+    sendTypingStatus(true)
+    scheduleTypingStop()
+  },
+  [isClosed, scheduleTypingStop, sendTypingStatus]
+)
 
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const group = messages[i]
-      if (!Array.isArray(group?.messages)) continue
-      for (let j = group.messages.length - 1; j >= 0; j--) {
-        const sessionUuid = group.messages[j]?.attributes?.metadata?.session_uuid
-        if (sessionUuid) {
-          saveConversationSessionId(conversation.id, String(sessionUuid))
-          return
-        }
-      }
-    }
-  }, [conversation.id, isClosed, messages])
-
-  // Suscripción a eventos en tiempo real para la conversación
-  useEffect(() => {
-    if (!conversation.id) return
-    const unsubscribe = subscribeToConversation(
-      config.reverb,
-      Number(conversation.id),
-      handleNewMessage,
-      handleTyping
-    )
-
-    return () => {
-      unsubscribe()
-    }
-  }, [config.reverb, conversation.id, handleNewMessage, handleTyping])
-
-  const handleSelectFile = useCallback(
-    (file: File) => {
-      if (isClosed) return
-      setPendingFile(file)
-    },
-    [isClosed]
-  )
-
-  const handleSendMessage = async (customText?: string) => {
-    if (isClosed) return
-    const caption = (typeof customText === 'string' ? customText : inputText).trim()
-    if (!caption && !pendingFile) return
-    if (!currentUser) return
-
-    const file = typeof customText === 'string' ? null : pendingFile
-    const optimisticMessage = createOptimisticMessage({
-      conversationId: conversation.id,
-      sender: currentUser,
-      body: caption,
-      file
-    })
-    const optimisticId = optimisticMessage.id
-
-    setOptimisticMessages((current) => [...current, optimisticMessage])
-    if (typeof customText !== 'string') {
-      setInputText('')
-    }
+useEffect(() => {
+  return () => {
     if (outgoingTypingTimerRef.current) {
       clearTimeout(outgoingTypingTimerRef.current)
       outgoingTypingTimerRef.current = null
     }
     sendTypingStatus(false)
+  }
+}, [conversation.id, sendTypingStatus])
 
-    try {
-      const message = file
-        ? await uploadMessageFile({
-          conversationId: conversation.id,
-          file,
-          sender_id: Number(currentUser.id),
-          caption: caption || undefined
-        })
-        : await sendMessage({
-          body: caption,
-          conversationId: conversation.id,
-          sender_id: currentUser.id
-        })
+const markConversationAsReadIfNeeded = () => {
+  if (!conversation.attributes.unread_count) return
+  scheduleMarkAsRead()
+}
 
-      setPendingFile(null)
-      await refetchMessages()
-      setOptimisticMessages((current) => current.filter((item) => item.id !== optimisticId))
+useEffect(() => {
+  markConversationAsReadIfNeeded()
+}, [conversation, messages, scheduleMarkAsRead])
 
-      scheduleMarkAsRead()
-    } catch {
-      setOptimisticMessages((current) =>
-        current.map((item) =>
-          item.id === optimisticId ? { ...item, local_status: 'error' } : item
-        )
+// Sincronizar o limpiar session_uuid asociado a la conversación en localStorage
+useEffect(() => {
+  if (!conversation.id) return
+
+  if (isClosed) {
+    removeConversationSessionId(conversation.id)
+    return
+  }
+
+  if (getConversationSessionId(conversation.id)) return
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const group = messages[i]
+    if (!Array.isArray(group?.messages)) continue
+    for (let j = group.messages.length - 1; j >= 0; j--) {
+      const sessionUuid = group.messages[j]?.attributes?.metadata?.session_uuid
+      if (sessionUuid) {
+        saveConversationSessionId(conversation.id, String(sessionUuid))
+        return
+      }
+    }
+  }
+}, [conversation.id, isClosed, messages])
+
+// Suscripción a eventos en tiempo real para la conversación
+useEffect(() => {
+  if (!conversation.id) return
+  const unsubscribe = subscribeToConversation(
+    config.reverb,
+    Number(conversation.id),
+    handleNewMessage,
+    handleTyping
+  )
+
+  return () => {
+    unsubscribe()
+  }
+}, [config.reverb, conversation.id, handleNewMessage, handleTyping])
+
+const handleSelectFile = useCallback(
+  (file: File) => {
+    if (isClosed) return
+    setPendingFile(file)
+  },
+  [isClosed]
+)
+
+const handleSendMessage = async (customText?: string) => {
+  if (isClosed) return
+  const caption = (typeof customText === 'string' ? customText : inputText).trim()
+  if (!caption && !pendingFile) return
+  if (!currentUser) return
+
+  const file = typeof customText === 'string' ? null : pendingFile
+  const optimisticMessage = createOptimisticMessage({
+    conversationId: conversation.id,
+    sender: currentUser,
+    body: caption,
+    file
+  })
+  const optimisticId = optimisticMessage.id
+
+  setOptimisticMessages((current) => [...current, optimisticMessage])
+  if (typeof customText !== 'string') {
+    setInputText('')
+  }
+  if (outgoingTypingTimerRef.current) {
+    clearTimeout(outgoingTypingTimerRef.current)
+    outgoingTypingTimerRef.current = null
+  }
+  sendTypingStatus(false)
+
+  try {
+    const message = file
+      ? await uploadMessageFile({
+        conversationId: conversation.id,
+        file,
+        sender_id: Number(currentUser.id),
+        caption: caption || undefined
+      })
+      : await sendMessage({
+        body: caption,
+        conversationId: conversation.id,
+        sender_id: currentUser.id
+      })
+
+    setPendingFile(null)
+    await refetchMessages()
+    setOptimisticMessages((current) => current.filter((item) => item.id !== optimisticId))
+  } catch {
+    setOptimisticMessages((current) =>
+      current.map((item) =>
+        item.id === optimisticId ? { ...item, local_status: 'error' } : item
       )
-    }
+    )
   }
+}
 
-  const handleCloseConversation = useCallback(async () => {
-    try {
-      await closeConversation(conversation.id)
-      toast.success('Conversación cerrada exitosamente')
-      options?.onCloseSuccess?.()
-    } catch (err: any) {
-      const errorMsg =
-        err?.response?.data?.message || err?.message || 'Error al cerrar la conversación'
-      toast.error(errorMsg)
-    }
-  }, [closeConversation, conversation.id, options])
-
-  return {
-    messages,
-    optimisticMessages,
-    scrollRef,
-    conversationName,
-    inputText,
-    pendingFile,
-    isClosed,
-    isClosing,
-    isSending,
-    isUploading,
-    isFetchingNextPage,
-    hasNextPage,
-    isLoading,
-    isNearBottom,
-    newMessagesCount,
-    typingUser,
-    visibleDate,
-    currentUser,
-    currentUserId,
-    scrollToBottom,
-    setInputText: handleInputTextChange,
-    setPendingFile,
-    handleSendMessage,
-    handleSelectFile,
-    handleCloseConversation,
-    refetchMessages
+const handleCloseConversation = useCallback(async () => {
+  try {
+    await closeConversation(conversation.id)
+    toast.success('Conversación cerrada exitosamente')
+    options?.onCloseSuccess?.()
+  } catch (err: any) {
+    const errorMsg =
+      err?.response?.data?.message || err?.message || 'Error al cerrar la conversación'
+    toast.error(errorMsg)
   }
+}, [closeConversation, conversation.id, options])
+
+return {
+  messages,
+  optimisticMessages,
+  scrollRef,
+  conversationName,
+  inputText,
+  pendingFile,
+  isClosed,
+  isClosing,
+  isSending,
+  isUploading,
+  isFetchingNextPage,
+  hasNextPage,
+  isLoading,
+  isNearBottom,
+  newMessagesCount,
+  typingUser,
+  visibleDate,
+  currentUser,
+  currentUserId,
+  scrollToBottom,
+  setInputText: handleInputTextChange,
+  setPendingFile,
+  handleSendMessage,
+  handleSelectFile,
+  handleCloseConversation,
+  refetchMessages
+}
 }
 
 export default useConversationChat

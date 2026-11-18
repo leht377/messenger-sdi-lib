@@ -92,6 +92,15 @@ export function ConversationComposer({
     }
   }, [inputText])
 
+  // Mantener siempre el foco en el textarea tras completar el envío
+  const wasSendingRef = useRef(false)
+  useEffect(() => {
+    if (wasSendingRef.current && !isSending && !isUploading) {
+      textareaRef.current?.focus()
+    }
+    wasSendingRef.current = isSending || isUploading
+  }, [isSending, isUploading])
+
   if (isClosed || readOnly) {
     return (
       <div className='shrink-0 px-3 pb-3 pt-1 text-center sm:px-4 sm:pb-4'>
@@ -300,6 +309,9 @@ export function ConversationComposer({
         setShowLinkInput(false)
         setShowPreview(false)
         onSendMessage()
+        requestAnimationFrame(() => {
+          textareaRef.current?.focus()
+        })
       }
     }
   }
@@ -594,7 +606,7 @@ export function ConversationComposer({
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 placeholder={`Responder a ${conversationName}...`}
-                disabled={isSending || isUploading}
+                disabled={isUploading}
                 rows={1}
                 aria-label={`Responder a ${conversationName}`}
                 className='max-h-30 min-h-7 w-full resize-none overflow-y-auto rounded-xl bg-transparent px-2 py-1 text-xs leading-5 text-neutral-800 outline-none placeholder:text-neutral-400 sm:text-sm dark:text-neutral-100 break-words'
@@ -604,13 +616,17 @@ export function ConversationComposer({
             <Button
               size='icon'
               variant='primary'
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setShowLinkInput(false)
                 setShowPreview(false)
                 onSendMessage()
+                requestAnimationFrame(() => {
+                  textareaRef.current?.focus()
+                })
               }}
               disabled={(isEmpty && !pendingFile) || isSending || isUploading}
-              className='size-8 shrink-0 rounded-full p-0'
+              className='size-8 shrink-0 rounded-full p-0 cursor-pointer'
               aria-label='Enviar mensaje'
               title='Enviar mensaje'
             >
