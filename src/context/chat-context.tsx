@@ -5,6 +5,8 @@ import { getUserByUserAuthIdChatService } from '../services/user.services'
 import { UserChat } from '../types/user-chat.types'
 import { getPermissionsMessenger, meService } from '../services/auth-services'
 import { configureChatHttp } from '../lib/http-request'
+import { VoiceCallDialog } from '../components/voice/voice-call-dialog'
+import { useActiveVoiceCall, voiceCallStore } from './voice-call-context'
 
 export interface ChatConfig {
   apiBaseUrl: string
@@ -199,7 +201,39 @@ export function ChatProvider({ config, children }: ChatProviderProps) {
     setCurrentUser
   }
 
-  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
+  return (
+    <ChatContext.Provider value={value}>
+      {children}
+      <GlobalVoiceCallManager />
+    </ChatContext.Provider>
+  )
+}
+
+function GlobalVoiceCallManager() {
+  const activeCall = useActiveVoiceCall()
+
+  if (!activeCall) return null
+
+  return (
+    <VoiceCallDialog
+      open={Boolean(activeCall)}
+      onOpenChange={(open) => {
+        if (!open) {
+          voiceCallStore.stop()
+        }
+      }}
+      conversationId={activeCall.conversationId}
+      userId={activeCall.userId}
+      userAuthId={activeCall.userAuthId}
+      senderMessengerId={activeCall.senderMessengerId}
+      sessionId={activeCall.sessionId || String(activeCall.conversationId)}
+      wsUrl={activeCall.wsUrl}
+      onCallEnded={(summary) => {
+        activeCall.onCallEnded?.(summary)
+        voiceCallStore.stop()
+      }}
+    />
+  )
 }
 
 export function useOptionalChatContext(): ChatContextValue | null {

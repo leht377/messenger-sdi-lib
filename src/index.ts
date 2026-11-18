@@ -19,6 +19,12 @@ export {
   type ActiveConversationProviderProps
 } from './context/active-conversation-context'
 
+export {
+  voiceCallStore,
+  useActiveVoiceCall,
+  type ActiveVoiceCallSession
+} from './context/voice-call-context'
+
 // 2. Componentes Principales
 export {
   FloatingChat,

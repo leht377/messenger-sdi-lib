@@ -15,6 +15,8 @@ import {
   type ConversationChatHeaderRenderOptions
 } from './conversation-chat-header'
 import { ActiveConversationProvider, activeConversationStore } from '../context/active-conversation-context'
+import { useOptionalChatContext } from '../context/chat-context'
+import { voiceCallStore } from '../context/voice-call-context'
 import { ConversationMessagesList } from './conversation-messages-list'
 import { ConversationComposer } from './conversation-composer'
 import { ChatWallpaper } from './chat-wallpaper'
@@ -68,6 +70,7 @@ export function ConversationChatPanel({
   const [queueResponse, setQueueResponse] = useState<EscalateChatSupportResponse | null>(null)
   const [isWaitingInQueue, setIsWaitingInQueue] = useState(false)
   const [isVoiceCallOpen, setIsVoiceCallOpen] = useState(false)
+  const chatContext = useOptionalChatContext()
 
   const {
     mutateAsync: escalateSupport,
@@ -354,6 +357,26 @@ export function ConversationChatPanel({
     }
   }
 
+  const handleStartVoiceCall = () => {
+    if (chatContext) {
+      voiceCallStore.start({
+        sessionId: `${conversation.id}`,
+        conversationId: conversation.id,
+        userId: chat.currentUserId || '',
+        userAuthId: chat.currentUser?.attributes?.user_auth_id || '',
+        senderMessengerId: chat.currentUserId || '',
+        onCallEnded: (result) => {
+          if (result.outcome === 'escalated_live' && result.data?.conversation_id) {
+            toast.success('Tu llamada ha sido transferida a un técnico de soporte.')
+          }
+          void chat.refetchMessages()
+        }
+      })
+    } else {
+      setIsVoiceCallOpen(true)
+    }
+  }
+
   const handleResolveSubmit = async ({
     rating,
     comment,
@@ -418,7 +441,7 @@ export function ConversationChatPanel({
             onBack={onBack}
             alwaysShowBackButton={alwaysShowBackButton}
             renderOptions={renderOptions}
-            onStartVoiceCall={() => setIsVoiceCallOpen(true)}
+            onStartVoiceCall={handleStartVoiceCall}
           />
         )}
 
@@ -533,21 +556,23 @@ export function ConversationChatPanel({
         }
       />
 
-      <VoiceCallDialog
-        open={isVoiceCallOpen}
-        onOpenChange={setIsVoiceCallOpen}
-        sessionId={`${conversation.id}`}
-        conversationId={conversation.id}
-        userId={chat.currentUserId || ''}
-        userAuthId={chat.currentUser?.attributes?.user_auth_id || ''}
-        senderMessengerId={chat.currentUserId || ''}
-        onCallEnded={(result) => {
-          if (result.outcome === 'escalated_live' && result.data?.conversation_id) {
-            toast.success('Tu llamada ha sido transferida a un técnico de soporte.')
-          }
-          void chat.refetchMessages()
-        }}
-      />
+      {!chatContext && (
+        <VoiceCallDialog
+          open={isVoiceCallOpen}
+          onOpenChange={setIsVoiceCallOpen}
+          sessionId={`${conversation.id}`}
+          conversationId={conversation.id}
+          userId={chat.currentUserId || ''}
+          userAuthId={chat.currentUser?.attributes?.user_auth_id || ''}
+          senderMessengerId={chat.currentUserId || ''}
+          onCallEnded={(result) => {
+            if (result.outcome === 'escalated_live' && result.data?.conversation_id) {
+              toast.success('Tu llamada ha sido transferida a un técnico de soporte.')
+            }
+            void chat.refetchMessages()
+          }}
+        />
+      )}
     </ActiveConversationProvider>
   )
 }
