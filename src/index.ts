@@ -256,6 +256,8 @@ export {
 export {
   saveConversationSessionId,
   getConversationSessionId,
+  getStoredConversationSession,
+  getAllConversationSessions,
   removeConversationSessionId
 } from './utils/session-storage.util'
 export {

@@ -560,7 +560,7 @@ export function ConversationChatPanel({
         <VoiceCallDialog
           open={isVoiceCallOpen}
           onOpenChange={setIsVoiceCallOpen}
-          sessionId={`${conversation.id}`}
+          sessionId={resolveCurrentSessionId() || `${conversation.id}`}
           conversationId={conversation.id}
           userId={chat.currentUserId || ''}
           userAuthId={chat.currentUser?.attributes?.user_auth_id || ''}
@@ -568,6 +568,10 @@ export function ConversationChatPanel({
           onCallEnded={(result) => {
             if (result.outcome === 'escalated_live' && result.data?.conversation_id) {
               toast.success('Tu llamada ha sido transferida a un técnico de soporte.')
+            }
+            if (result.outcome === 'resolved') {
+              removeConversationSessionId(conversation.id)
+              setIsResolvedLocal(true)
             }
             void chat.refetchMessages()
           }}

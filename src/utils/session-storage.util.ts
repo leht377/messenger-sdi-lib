@@ -56,6 +56,29 @@ export function getConversationSessionId(
   return map[key] ?? null
 }
 
+export function getAllConversationSessions(): Record<string, string> {
+  return readSessionsMap()
+}
+
+export function getStoredConversationSession(
+  conversationId?: string | number | null
+): string | null {
+  const map = readSessionsMap()
+  if (conversationId !== undefined && conversationId !== null) {
+    const key = String(conversationId).trim()
+    if (key && map[key]) {
+      return map[key]
+    }
+  }
+
+  const keys = Object.keys(map)
+  if (keys.length > 0) {
+    return map[keys[keys.length - 1]]
+  }
+
+  return null
+}
+
 export function removeConversationSessionId(
   conversationId: string | number
 ): void {

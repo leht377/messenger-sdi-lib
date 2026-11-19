@@ -125,6 +125,7 @@ export function useVoiceCall({
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [cameraFacingMode, setCameraFacingMode] = useState<'environment' | 'user'>('environment')
+  const [serverSessionId, setServerSessionId] = useState<string | null>(null)
   const [textInput, setTextInput] = useState('')
   const [retryCounter, setRetryCounter] = useState(0)
 
@@ -367,6 +368,7 @@ export function useVoiceCall({
       setOutputAnalyserNode(null)
       setUserRms(0)
       setBotRms(0)
+      setServerSessionId(null)
       return
     }
 
@@ -388,6 +390,7 @@ export function useVoiceCall({
     setIsSimulatingMicroCut(false)
     setOutcomeData(null)
     outcomeDataRef.current = null
+    setServerSessionId(null)
     setOutcomeType('completed')
     outcomeTypeRef.current = 'completed'
     setFinalizedData(null)
@@ -409,6 +412,9 @@ export function useVoiceCall({
       },
       {
         onReady: (readyEvt) => {
+          if (readyEvt.session_id) {
+            setServerSessionId(readyEvt.session_id)
+          }
           setReconnectingBanner(null)
           setIsSimulatingMicroCut(false)
           setCallState('listening')
@@ -777,19 +783,12 @@ export function useVoiceCall({
     }
   }, [closeModalSafely, stopTimer])
 
-  const handleDismissEndedCall = useCallback(() => {
-    closeModalSafely()
-  }, [closeModalSafely])
-
-  // Cierre automático de cortesía tras 4.5s en la pantalla de resumen
-  useEffect(() => {
-    if (callState === 'ended') {
-      const timer = setTimeout(() => {
-        closeModalSafely()
-      }, 4500)
-      return () => clearTimeout(timer)
-    }
-  }, [callState, closeModalSafely])
+  const handleDismissEndedCall = useCallback(
+    (overrideOutcome?: string, overrideData?: Record<string, unknown> | null) => {
+      closeModalSafely(overrideOutcome, overrideData)
+    },
+    [closeModalSafely]
+  )
 
   const handleDialogCloseAttempt = useCallback(
     (nextOpen: boolean) => {
@@ -1021,14 +1020,18 @@ export function useVoiceCall({
       null
 
     return {
-      sessionId: callSessionId,
+      sessionId: serverSessionId || callSessionId,
       terminalId: callerContext?.terminal_id || null,
       ticketNumber: ticketFromOutcome,
       serviceName: callerContext?.service_name || null,
       posLocation: callerContext?.user?.place_name || null,
       openTicketsCount: callerContext?.recent_open_tickets?.length || 0
     }
-  }, [callSessionId, callerContext, outcomeData, finalizedData])
+  }, [serverSessionId, callSessionId, callerContext, outcomeData, finalizedData])
+
+  const activeSessionId = useMemo(() => {
+    return serverSessionId || contextBadges.sessionId || callSessionId || sessionId
+  }, [serverSessionId, contextBadges.sessionId, callSessionId, sessionId])
 
   const isEnded = callState === 'ended'
   const isConnecting =
@@ -1054,6 +1057,8 @@ export function useVoiceCall({
     formattedDuration,
     hasPermission,
     micError,
+    activeSessionId,
+    closeModalSafely,
     analyserNode,
     outputAnalyserNode,
     userRms,

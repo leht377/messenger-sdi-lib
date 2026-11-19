@@ -382,6 +382,11 @@ export interface VoiceCallDialogProps {
   senderMessengerId?: string | number
   wsUrl?: string
   onCallEnded?: (result: VoiceCallEndResult) => void
+  onResolveSubmit?: (data: {
+    rating: number
+    comment: string
+    helpful: boolean
+  }) => Promise<void> | void
 }
 
 export function VoiceCallDialog({
@@ -393,7 +398,8 @@ export function VoiceCallDialog({
   userAuthId,
   senderMessengerId,
   wsUrl,
-  onCallEnded
+  onCallEnded,
+  onResolveSubmit
 }: VoiceCallDialogProps) {
   const voice = useVoiceCall({
     open,
@@ -432,7 +438,16 @@ export function VoiceCallDialog({
               transcriptsCount={voice.transcripts.length}
               outcomeType={voice.outcomeType}
               contextBadges={voice.contextBadges}
-              onClose={voice.handleDismissEndedCall}
+              sessionId={voice.activeSessionId || sessionId}
+              conversationId={conversationId}
+              onClose={(wasResolved?: boolean) => {
+                if (wasResolved) {
+                  voice.handleDismissEndedCall('resolved')
+                } else {
+                  voice.handleDismissEndedCall()
+                }
+              }}
+              onSubmitRating={onResolveSubmit}
             />
           ) : voice.isConnecting ? (
             <VoiceCallConnecting
