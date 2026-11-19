@@ -59,6 +59,9 @@ export function ConversationMessagesList({
   const visibleOptimisticMessages = optimisticMessages.filter(
     (message) => !historyMessageIds.has(message.id)
   )
+  const hasTodayGroupInHistory = messages.some(
+    (group) => formatDisplayDate(group.date) === 'Hoy'
+  )
   const lastMessageId =
     visibleOptimisticMessages.length > 0
       ? visibleOptimisticMessages[visibleOptimisticMessages.length - 1]?.id
@@ -173,13 +176,20 @@ export function ConversationMessagesList({
 
           {visibleOptimisticMessages.length > 0 && (
             <div data-date-group='Hoy' className='space-y-4'>
-              <div className='flex items-center justify-center'>
-                <span className='rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-0.5 text-[11px] font-medium text-neutral-500 dark:text-neutral-400 shadow-xs'>
-                  Hoy
-                </span>
-              </div>
+              {!hasTodayGroupInHistory && (
+                <div className='flex items-center justify-center'>
+                  <span className='rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-0.5 text-[11px] font-medium text-neutral-500 dark:text-neutral-400 shadow-xs'>
+                    Hoy
+                  </span>
+                </div>
+              )}
               {[...visibleOptimisticMessages].map((message) => {
                 const isLastMessage = message.id === lastMessageId
+                const isOwnMessage =
+                  !message.id.startsWith('temp_bot_') &&
+                  String(message?.relationships?.sender?.id ?? message?.attributes?.sender_id) ===
+                    String(currentUserId)
+
                 return (
                   <div
                     key={message.id}
@@ -188,7 +198,7 @@ export function ConversationMessagesList({
                   >
                     <ConversationMessageItem
                       message={message}
-                      isOwnMessage
+                      isOwnMessage={isOwnMessage}
                       isGroup={isGroup}
                       conversationName={conversationName}
                       conversationAvatarUrl={conversationUser?.attributes.avatar_url || undefined}

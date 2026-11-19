@@ -19,9 +19,24 @@ export interface MessageActionButton {
   action: string
 }
 
+export interface BotWikiArticle {
+  id: number | string
+  title: string
+  excerpt?: string | null
+  slug?: string | null
+  url?: string | null
+}
+
 export interface MessageMetadata {
   session_uuid?: string | null
   state?: string
+  intent?: string | null
+  confidence?: number | null
+  solution_id?: number | string | null
+  article?: BotWikiArticle | null
+  tickets?: Array<Record<string, unknown>> | null
+  ttft_ms?: number | null
+  total_ms?: number | null
   action_buttons?: MessageActionButton[]
   [key: string]: unknown
 }
@@ -48,6 +63,7 @@ export interface Message {
     attachments: MessageAttachment[]
   }
   local_status?: 'sending' | 'sent' | 'error'
+  isStreaming?: boolean
 }
 
 export interface MessageParams extends ApiMessengerParams {

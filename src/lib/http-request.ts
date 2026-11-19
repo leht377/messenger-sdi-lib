@@ -21,6 +21,10 @@ export const configureChatHttp = (config: ChatHttpConfig) => {
   chatHttpConfig = config
 }
 
+export const getChatAuthHeaders = (): Record<string, string> => {
+  return chatHttpConfig?.authToken ? { Authorization: `Bearer ${chatHttpConfig.authToken}` } : {}
+}
+
 const convertBooleanParamsToNumber = (params: object) =>
   Object.entries(params).reduce<Record<string, unknown>>((acc, [key, value]) => {
     acc[key] = typeof value === 'boolean' ? Number(value) : value

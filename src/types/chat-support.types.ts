@@ -1,4 +1,4 @@
-import type { MessageActionButton } from './message.types'
+import type { BotWikiArticle, MessageActionButton } from './message.types'
 
 export interface RequestChatSupportPayload {
   subject: string
@@ -87,5 +87,52 @@ export interface ChatBotQueueToTicketResponse {
   message?: string | null
   ticket?: ChatSupportTicket | null
   [key: string]: unknown
+}
+
+export interface BotChatHistoryItem {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface SendBotMessagePayload {
+  session_id: string
+  message: string
+  user_id?: number | string
+  conversation_id?: number | string
+  history?: BotChatHistoryItem[]
+}
+
+export interface BotStreamMetaEvent {
+  session_uuid?: string
+  state?: string
+  intent?: string
+  confidence?: number
+  article?: BotWikiArticle | null
+  tickets?: Array<Record<string, unknown>>
+  ttft_ms?: number
+  [key: string]: unknown
+}
+
+export interface BotStreamDeltaEvent {
+  text: string
+}
+
+export interface BotStreamDoneEvent {
+  session_uuid?: string
+  state?: string
+  solution_id?: number | string | null
+  reply?: string
+  message?: string
+  article?: BotWikiArticle | null
+  action_buttons?: MessageActionButton[]
+  total_ms?: number
+  [key: string]: unknown
+}
+
+export interface BotStreamCallbacks {
+  onMeta?: (meta: BotStreamMetaEvent) => void
+  onDelta?: (chunk: string) => void
+  onDone?: (donePayload: BotStreamDoneEvent) => void
+  onError?: (error: Error) => void
 }
 

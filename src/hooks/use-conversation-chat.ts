@@ -1,8 +1,21 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Conversation, TypingEvent } from '../types/conversation.types'
-import type { ConversationMessage, Message, MessageParams } from '../types/message.types'
-import { getConversationName } from '../utils/conversation.util'
+import type {
+  ConversationMessage,
+  Message,
+  MessageMetadata,
+  MessageParams
+} from '../types/message.types'
+import type { BotChatHistoryItem } from '../types/chat-support.types'
+import type { UserChat } from '../types/user-chat.types'
+import {
+  getConversationName,
+  getConversationUser,
+  isConversationBot,
+  isUserBot
+} from '../utils/conversation.util'
 import { createOptimisticMessage, mergeOlderGroups } from '../utils/message.util'
+import { sendBotMessageStream } from '../services/bot.service'
 import useListMessages from './api/messages/use-list-messages'
 import useSendMessage from './api/messages/use-send-message'
 import useUploadMessageFile from './api/messages/use-upload-message-file'
@@ -18,6 +31,84 @@ import {
 } from '../utils/session-storage.util'
 import { useChatContext } from '../context/chat-context'
 import { playNotificationSound } from '../utils/audio.util'
+
+function buildBotHistory(
+  groups: ConversationMessage[],
+  currentUserId?: string
+): BotChatHistoryItem[] {
+  const history: BotChatHistoryItem[] = []
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const groupMessages = groups[i]?.messages
+    if (!Array.isArray(groupMessages)) continue
+    for (let j = groupMessages.length - 1; j >= 0; j--) {
+      const msg = groupMessages[j]
+      const text = (msg?.attributes?.body || '').trim()
+      if (!text) continue
+      const senderId = msg?.relationships?.sender?.id ?? msg?.attributes?.sender_id
+      const role: 'user' | 'assistant' =
+        currentUserId && String(senderId) === String(currentUserId) ? 'user' : 'assistant'
+      history.push({ role, content: text })
+    }
+  }
+  return history.slice(-20)
+}
+
+function resolveSessionIdFromChat(
+  conversationId: string,
+  groups: ConversationMessage[]
+): string {
+  const stored = getConversationSessionId(conversationId)
+  if (stored) return stored
+
+  for (let i = 0; i < groups.length; i++) {
+    const groupMessages = groups[i]?.messages
+    if (!Array.isArray(groupMessages)) continue
+    for (let j = 0; j < groupMessages.length; j++) {
+      const candidate = groupMessages[j]?.attributes?.metadata?.session_uuid
+      if (candidate) return String(candidate)
+    }
+  }
+
+  return `conv_${conversationId}`
+}
+
+function mergeBotMessageMetadata(
+  target: Message,
+  extraMeta?: Partial<MessageMetadata> | null,
+  fallbackBody?: string
+): Message {
+  const existingMeta = target.attributes?.metadata || {}
+  const mergedMeta: MessageMetadata = {
+    ...existingMeta,
+    ...(extraMeta
+      ? {
+          session_uuid: extraMeta.session_uuid ?? existingMeta.session_uuid,
+          state: extraMeta.state ?? existingMeta.state,
+          intent: extraMeta.intent ?? existingMeta.intent,
+          confidence: extraMeta.confidence ?? existingMeta.confidence,
+          solution_id: extraMeta.solution_id ?? existingMeta.solution_id,
+          article: extraMeta.article ?? existingMeta.article,
+          tickets: extraMeta.tickets ?? existingMeta.tickets,
+          ttft_ms: extraMeta.ttft_ms ?? existingMeta.ttft_ms,
+          total_ms: extraMeta.total_ms ?? existingMeta.total_ms,
+          action_buttons:
+            extraMeta.action_buttons && extraMeta.action_buttons.length > 0
+              ? extraMeta.action_buttons
+              : existingMeta.action_buttons
+        }
+      : {})
+  }
+
+  return {
+    ...target,
+    isStreaming: false,
+    attributes: {
+      ...target.attributes,
+      body: target.attributes?.body?.trim() ? target.attributes.body : fallbackBody || target.attributes?.body || '',
+      metadata: mergedMeta
+    }
+  }
+}
 
 export interface UseConversationChatOptions {
   onCloseSuccess?: () => void
@@ -56,6 +147,7 @@ export const useConversationChat = (
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const isClosed = Boolean(conversation.attributes.closed_at)
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([])
+  const [isBotStreaming, setIsBotStreaming] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
   const [newMessagesCount, setNewMessagesCount] = useState(0)
   const [visibleDate, setVisibleDate] = useState('Hoy')
@@ -64,18 +156,40 @@ export const useConversationChat = (
   const scrollRef = useRef<HTMLDivElement>(null)
   const isInitialScrollDoneRef = useRef(false)
   const isAutoScrollingRef = useRef(false)
+  const isNearBottomRef = useRef(true)
   const previousScrollHeightRef = useRef(0)
   const previousScrollTopRef = useRef(0)
   const isFetchingNextPageRef = useRef(false)
   const hasNextPageRef = useRef(hasNextPage)
   const previousConversationIdRef = useRef(conversation.id)
+  const messagesRef = useRef(messages)
+  const optimisticMessagesRef = useRef<Message[]>([])
+  const pendingReverbBotMessageRef = useRef<Message | null>(null)
+  const latestBotSseMetaRef = useRef<{ text: string; meta: Partial<MessageMetadata> } | null>(null)
+  const streamAbortControllerRef = useRef<AbortController | null>(null)
 
   const markReadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const outgoingTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isTypingRef = useRef(false)
   const updateConversationTypingRef = useRef(updateConversationTyping)
+  const conversationUser = getConversationUser(conversation, currentUserId)
+  const isBotChat =
+    isConversationBot(conversation, currentUserId) || isUserBot(conversationUser)
   const conversationName = getConversationName(conversation, currentUserId)
+
+  messagesRef.current = messages
+
+  const updateOptimisticMessages = useCallback(
+    (updater: React.SetStateAction<Message[]>) => {
+      setOptimisticMessages((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater
+        optimisticMessagesRef.current = next
+        return next
+      })
+    },
+    []
+  )
 
   useEffect(() => {
     updateConversationTypingRef.current = updateConversationTyping
@@ -98,6 +212,7 @@ export const useConversationChat = (
       behavior: 'smooth'
     })
     setNewMessagesCount(0)
+    isNearBottomRef.current = true
     setIsNearBottom(true)
   }, [])
 
@@ -109,6 +224,7 @@ export const useConversationChat = (
       container.scrollHeight - container.scrollTop - container.clientHeight
     const nearBottom = scrollBottomOffset < 140
 
+    isNearBottomRef.current = nearBottom
     setIsNearBottom(nearBottom)
     if (nearBottom) {
       setNewMessagesCount(0)
@@ -143,16 +259,22 @@ export const useConversationChat = (
   useEffect(() => {
     if (previousConversationIdRef.current !== conversation.id) {
       previousConversationIdRef.current = conversation.id
+      streamAbortControllerRef.current?.abort()
+      streamAbortControllerRef.current = null
+      pendingReverbBotMessageRef.current = null
+      latestBotSseMetaRef.current = null
       isInitialScrollDoneRef.current = false
       isAutoScrollingRef.current = false
+      isNearBottomRef.current = true
       previousScrollHeightRef.current = 0
       previousScrollTopRef.current = 0
-      setOptimisticMessages([])
+      updateOptimisticMessages([])
+      setIsBotStreaming(false)
       setIsNearBottom(true)
       setNewMessagesCount(0)
       setVisibleDate('Hoy')
     }
-  }, [conversation.id])
+  }, [conversation.id, updateOptimisticMessages])
 
   // Posicionamiento inicial directo al fondo
   useEffect(() => {
@@ -266,6 +388,8 @@ export const useConversationChat = (
 
   useEffect(() => {
     return () => {
+      streamAbortControllerRef.current?.abort()
+      streamAbortControllerRef.current = null
       if (markReadTimerRef.current) {
         clearTimeout(markReadTimerRef.current)
         markReadTimerRef.current = null
@@ -284,7 +408,60 @@ export const useConversationChat = (
 
   const handleNewMessage = useCallback(
     (message: Message) => {
-      prependIncomingMessage(message)
+      const incomingBodyTrimmed = (message.attributes.body || '').trim()
+      const isFromCurrentUser = Boolean(
+        currentUserId && String(message.attributes.sender_id) === String(currentUserId)
+      )
+      const isFromBot = isUserBot(message.relationships?.sender) || (!isFromCurrentUser && isBotChat)
+
+      let messageToInsert = message
+
+      if (isFromCurrentUser) {
+        const matchedOptimisticUser = optimisticMessagesRef.current.find(
+          (item) =>
+            !item.id.startsWith('temp_bot_') &&
+            (item.attributes.body || '').trim() === incomingBodyTrimmed
+        )
+        if (matchedOptimisticUser) {
+          updateOptimisticMessages((current) =>
+            current.filter((item) => item.id !== matchedOptimisticUser.id)
+          )
+        }
+      } else if (isFromBot) {
+        const activeTempBot = optimisticMessagesRef.current.find((item) =>
+          item.id.startsWith('temp_bot_')
+        )
+
+        if (activeTempBot) {
+          if (activeTempBot.isStreaming) {
+            pendingReverbBotMessageRef.current = message
+            if (typingTimerRef.current) {
+              clearTimeout(typingTimerRef.current)
+              typingTimerRef.current = null
+            }
+            setTypingUser(null)
+            scheduleMarkAsRead()
+            return
+          }
+
+          messageToInsert = mergeBotMessageMetadata(
+            message,
+            activeTempBot.attributes.metadata || latestBotSseMetaRef.current?.meta
+          )
+          updateOptimisticMessages((current) =>
+            current.filter((item) => item.id !== activeTempBot.id)
+          )
+          latestBotSseMetaRef.current = null
+        } else if (
+          latestBotSseMetaRef.current &&
+          (!incomingBodyTrimmed || latestBotSseMetaRef.current.text.trim() === incomingBodyTrimmed)
+        ) {
+          messageToInsert = mergeBotMessageMetadata(message, latestBotSseMetaRef.current.meta)
+          latestBotSseMetaRef.current = null
+        }
+      }
+
+      prependIncomingMessage(messageToInsert)
 
       const container = scrollRef.current
       if (container) {
@@ -316,7 +493,7 @@ export const useConversationChat = (
 
       scheduleMarkAsRead()
     },
-    [currentUserId, prependIncomingMessage, scheduleMarkAsRead]
+    [currentUserId, isBotChat, prependIncomingMessage, scheduleMarkAsRead, updateOptimisticMessages]
   )
 
   const handleTyping = useCallback(
@@ -470,7 +647,6 @@ const handleSendMessage = async (customText?: string) => {
   })
   const optimisticId = optimisticMessage.id
 
-  setOptimisticMessages((current) => [...current, optimisticMessage])
   if (typeof customText !== 'string') {
     setInputText('')
   }
@@ -480,25 +656,259 @@ const handleSendMessage = async (customText?: string) => {
   }
   sendTypingStatus(false)
 
+  // Flujo Streaming SSE en conversaciones activas con el Asistente Virtual IA
+  if (isBotChat && !file && caption) {
+    const sessionId = resolveSessionIdFromChat(conversation.id, messagesRef.current)
+    saveConversationSessionId(conversation.id, sessionId)
+    const history = buildBotHistory(messagesRef.current, currentUserId)
+
+    const botSender: UserChat = conversationUser || {
+      id: '1',
+      type: 'user',
+      attributes: {
+        user_auth_id: 0,
+        name: 'Asistente Virtual IA',
+        avatar_url: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      relationships: []
+    }
+
+    const tempBotId = `temp_bot_${Date.now()}`
+    const tempBotMessage: Message = {
+      id: tempBotId,
+      type: 'message',
+      attributes: {
+        conversation_id: Number(conversation.id),
+        created_at: new Date().toISOString(),
+        sender_id: Number(botSender.id || 1),
+        body: '',
+        type: { id: 0, name: 'message', icon: '' },
+        metadata: {
+          session_uuid: sessionId
+        }
+      },
+      relationships: {
+        sender: botSender,
+        attachments: []
+      },
+      isStreaming: true
+    }
+
+    pendingReverbBotMessageRef.current = null
+    latestBotSseMetaRef.current = null
+    streamAbortControllerRef.current?.abort()
+    const streamController = new AbortController()
+    streamAbortControllerRef.current = streamController
+
+    let sseMeta: Partial<MessageMetadata> = { session_uuid: sessionId }
+    let accumulatedReply = ''
+
+    updateOptimisticMessages((current) => [
+      ...current,
+      optimisticMessage,
+      tempBotMessage
+    ])
+    setIsBotStreaming(true)
+
+    try {
+      await sendBotMessageStream(
+        {
+          session_id: sessionId,
+          message: caption,
+          user_id: Number(currentUser.id),
+          conversation_id: Number(conversation.id),
+          history
+        },
+        {
+          onMeta: (meta) => {
+            if (meta.session_uuid) {
+              saveConversationSessionId(conversation.id, meta.session_uuid)
+            }
+            sseMeta = {
+              ...sseMeta,
+              session_uuid: meta.session_uuid ?? sseMeta.session_uuid,
+              state: meta.state ?? sseMeta.state,
+              intent: meta.intent ?? sseMeta.intent,
+              confidence: meta.confidence ?? sseMeta.confidence,
+              article: meta.article ?? sseMeta.article,
+              tickets: meta.tickets ?? sseMeta.tickets,
+              ttft_ms: meta.ttft_ms ?? sseMeta.ttft_ms
+            }
+
+            updateOptimisticMessages((current) =>
+              current.map((item) => {
+                if (item.id === optimisticId) {
+                  return { ...item, local_status: 'sent' }
+                }
+                if (item.id === tempBotId) {
+                  return {
+                    ...item,
+                    attributes: {
+                      ...item.attributes,
+                      metadata: {
+                        ...(item.attributes.metadata || {}),
+                        ...sseMeta
+                      }
+                    }
+                  }
+                }
+                return item
+              })
+            )
+          },
+          onDelta: (chunk) => {
+            accumulatedReply += chunk
+            updateOptimisticMessages((current) =>
+              current.map((item) => {
+                if (item.id === optimisticId) {
+                  return { ...item, local_status: 'sent' }
+                }
+                if (item.id === tempBotId) {
+                  return {
+                    ...item,
+                    isStreaming: true,
+                    attributes: {
+                      ...item.attributes,
+                      body: (item.attributes.body || '') + chunk
+                    }
+                  }
+                }
+                return item
+              })
+            )
+
+            if (isNearBottomRef.current && scrollRef.current) {
+              requestAnimationFrame(() => {
+                if (scrollRef.current) {
+                  scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+                }
+              })
+            }
+          },
+          onDone: (donePayload) => {
+            if (donePayload.session_uuid) {
+              saveConversationSessionId(conversation.id, donePayload.session_uuid)
+            }
+            const finalBody = donePayload.reply || donePayload.message || accumulatedReply
+            sseMeta = {
+              ...sseMeta,
+              session_uuid: donePayload.session_uuid ?? sseMeta.session_uuid,
+              state: donePayload.state ?? sseMeta.state,
+              solution_id: donePayload.solution_id ?? sseMeta.solution_id,
+              article: donePayload.article ?? sseMeta.article,
+              action_buttons: donePayload.action_buttons ?? sseMeta.action_buttons,
+              total_ms: donePayload.total_ms ?? sseMeta.total_ms
+            }
+
+            const deferredReverbMsg = pendingReverbBotMessageRef.current
+            if (deferredReverbMsg) {
+              pendingReverbBotMessageRef.current = null
+              latestBotSseMetaRef.current = null
+              const reconciledMessage = mergeBotMessageMetadata(
+                deferredReverbMsg,
+                sseMeta,
+                finalBody
+              )
+              updateOptimisticMessages((current) =>
+                current
+                  .map((item) =>
+                    item.id === optimisticId ? { ...item, local_status: 'sent' as const } : item
+                  )
+                  .filter((item) => item.id !== tempBotId)
+              )
+              prependIncomingMessage(reconciledMessage)
+              playNotificationSound('focused')
+              if (isNearBottomRef.current && scrollRef.current) {
+                requestAnimationFrame(() => {
+                  if (scrollRef.current) {
+                    scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+                  }
+                })
+              }
+              return
+            }
+
+            latestBotSseMetaRef.current = {
+              text: finalBody,
+              meta: sseMeta
+            }
+
+            updateOptimisticMessages((current) =>
+              current.map((item) => {
+                if (item.id === optimisticId) {
+                  return { ...item, local_status: 'sent' }
+                }
+                if (item.id === tempBotId) {
+                  return {
+                    ...item,
+                    isStreaming: false,
+                    attributes: {
+                      ...item.attributes,
+                      body: finalBody,
+                      metadata: {
+                        ...(item.attributes.metadata || {}),
+                        ...sseMeta
+                      }
+                    }
+                  }
+                }
+                return item
+              })
+            )
+          },
+          onError: (err) => {
+            toast.error(err.message || 'Error al obtener respuesta del asistente')
+            updateOptimisticMessages((current) =>
+              current
+                .map((item) => {
+                  if (item.id === optimisticId) {
+                    return { ...item, local_status: 'error' as const }
+                  }
+                  if (item.id === tempBotId) {
+                    return { ...item, isStreaming: false }
+                  }
+                  return item
+                })
+                .filter((item) => !(item.id === tempBotId && !(item.attributes.body || '').trim()))
+            )
+          }
+        },
+        { signal: streamController.signal }
+      )
+    } catch {
+      // Manejado por onError si falló también el fallback síncrono
+    } finally {
+      if (streamAbortControllerRef.current === streamController) {
+        streamAbortControllerRef.current = null
+      }
+      setIsBotStreaming(false)
+    }
+    return
+  }
+
+  updateOptimisticMessages((current) => [...current, optimisticMessage])
+
   try {
-    const message = file
-      ? await uploadMessageFile({
+    await (file
+      ? uploadMessageFile({
         conversationId: conversation.id,
         file,
         sender_id: Number(currentUser.id),
         caption: caption || undefined
       })
-      : await sendMessage({
+      : sendMessage({
         body: caption,
         conversationId: conversation.id,
         sender_id: currentUser.id
-      })
+      }))
 
     setPendingFile(null)
     await refetchMessages()
-    setOptimisticMessages((current) => current.filter((item) => item.id !== optimisticId))
+    updateOptimisticMessages((current) => current.filter((item) => item.id !== optimisticId))
   } catch {
-    setOptimisticMessages((current) =>
+    updateOptimisticMessages((current) =>
       current.map((item) =>
         item.id === optimisticId ? { ...item, local_status: 'error' } : item
       )
@@ -527,7 +937,8 @@ return {
   pendingFile,
   isClosed,
   isClosing,
-  isSending,
+  isSending: isSending || isBotStreaming,
+  isBotStreaming,
   isUploading,
   isFetchingNextPage,
   hasNextPage,

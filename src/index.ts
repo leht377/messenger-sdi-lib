@@ -75,6 +75,16 @@ export {
 } from './components/message-rich-text'
 
 export {
+  BotWikiCard,
+  type BotWikiCardProps
+} from './components/bot-wiki-card'
+
+export {
+  BotActionButtons,
+  type BotActionButtonsProps
+} from './components/bot-action-buttons'
+
+export {
   VoiceCallDialog,
   type VoiceCallDialogProps
 } from './components/voice/voice-call-dialog'
@@ -170,6 +180,7 @@ export type {
   MessageAttachment,
   MessageType,
   MessageActionButton,
+  BotWikiArticle,
   MessageMetadata,
   CreateMessagePayload,
   UploadMessageFilePayload
@@ -186,7 +197,13 @@ export type {
   ResolveChatSupportResponse,
   ChatBotQueueStatusResponse,
   ChatBotQueueToTicketPayload,
-  ChatBotQueueToTicketResponse
+  ChatBotQueueToTicketResponse,
+  BotChatHistoryItem,
+  SendBotMessagePayload,
+  BotStreamMetaEvent,
+  BotStreamDeltaEvent,
+  BotStreamDoneEvent,
+  BotStreamCallbacks
 } from './types/chat-support.types'
 
 export type {
@@ -224,6 +241,11 @@ export {
   chatBotQueueStatusService,
   chatBotQueueToTicketService
 } from './services/chat-support.services'
+export {
+  sendBotMessageStream,
+  sendBotMessageSync,
+  type SendBotMessageStreamOptions
+} from './services/bot.service'
 export {
   buildVoiceWebSocketUrl,
   VoiceCallClient,

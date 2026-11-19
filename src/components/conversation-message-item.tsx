@@ -4,6 +4,8 @@ import { CheckCheck, Clock, Download, FileText, Sparkles } from 'lucide-react'
 import type { Message, MessageAttachment, MessageActionButton } from '../types/message.types'
 import { capitalizeWords } from '../utils/conversation.util'
 import { MessageRichText } from './message-rich-text'
+import { BotWikiCard } from './bot-wiki-card'
+import { BotActionButtons } from './bot-action-buttons'
 
 interface ConversationMessageItemProps {
   message: Message
@@ -41,6 +43,8 @@ export function ConversationMessageItem({
     Boolean(isBot) ||
     Number(message.relationships?.sender?.attributes?.user_auth_id) === 0
   const actionButtons = message.attributes?.metadata?.action_buttons ?? []
+  const wikiArticle = message.attributes?.metadata?.article
+  const isStreaming = Boolean(message.isStreaming)
   const senderName = capitalizeWords(message.relationships?.sender?.attributes?.name || conversationName)
   const senderAvatar = message.relationships?.sender?.attributes?.avatar_url || undefined
   const hoursAgo = formatMessageTime(message.attributes.created_at)
@@ -99,6 +103,11 @@ export function ConversationMessageItem({
                 : 'rounded-tl-xs bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 border border-neutral-200/80 dark:border-neutral-700/60 shadow-xs'
           )}
         >
+          {/* Tarjeta Wiki sugerida inmediata (event: meta) */}
+          {isSenderBot && !isOwnMessage && wikiArticle && (
+            <BotWikiCard article={wikiArticle} />
+          )}
+
           {attachments.map((attachment: MessageAttachment) => {
             const isImage = attachment.attributes.file_mime_type.startsWith('image/')
 
@@ -132,49 +141,57 @@ export function ConversationMessageItem({
               </a>
             )
           })}
-          {message.attributes.body && attachments.length === 0 && (
-            <MessageRichText
-              content={message.attributes.body}
-              isOwnMessage={isOwnMessage}
-              isBot={isSenderBot}
-            />
-          )}
-          {message.attributes.body &&
-            attachments.length > 0 &&
-            message.attributes.body !== 'Archivo adjunto' && (
-              <div className='mt-1'>
-                <MessageRichText
-                  content={message.attributes.body}
-                  isOwnMessage={isOwnMessage}
-                  isBot={isSenderBot}
-                />
-              </div>
-            )}
 
-          {/* Botones de acción del bot / IA */}
-          {isSenderBot && !isOwnMessage && actionButtons.length > 0 && (
-            <div className='mt-2.5 pt-2 border-t border-violet-200/60 dark:border-violet-800/40 flex flex-wrap gap-1.5'>
-              {actionButtons.map((btn) => (
-                <button
-                  key={btn.id}
-                  type='button'
-                  disabled={disableActions}
-                  onClick={() => {
-                    if (!disableActions) {
-                      onActionClick?.(btn)
-                    }
-                  }}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold shadow-2xs transition-all',
-                    disableActions
-                      ? 'border-neutral-200 dark:border-neutral-700/50 bg-neutral-100/80 dark:bg-neutral-800/50 text-neutral-400 dark:text-neutral-500 cursor-not-allowed opacity-60'
-                      : 'border-violet-200 dark:border-violet-700/60 bg-white/95 dark:bg-neutral-800/90 hover:bg-violet-600 hover:text-white dark:hover:bg-violet-600 dark:hover:text-white hover:border-violet-600 dark:hover:border-violet-600 text-violet-700 dark:text-violet-300 active:scale-95 cursor-pointer'
-                  )}
-                >
-                  <span>{btn.label}</span>
-                </button>
-              ))}
+          {isStreaming && !message.attributes.body && attachments.length === 0 ? (
+            <div className='flex items-center gap-1 text-neutral-500 dark:text-neutral-400'>
+              <span>Escribiendo</span>
+              <span
+                className='inline-block text-violet-600 dark:text-violet-400 font-bold animate-pulse select-none'
+                aria-hidden='true'
+              >
+                ▍
+              </span>
             </div>
+          ) : (
+            <>
+              {message.attributes.body && attachments.length === 0 && (
+                <div className={cn(isStreaming && '[&>div]:inline [&>div>div:last-child]:inline')}>
+                  <MessageRichText
+                    content={message.attributes.body}
+                    isOwnMessage={isOwnMessage}
+                    isBot={isSenderBot}
+                  />
+                  {isStreaming && (
+                    <span
+                      className='inline-block ml-0.5 text-violet-600 dark:text-violet-400 font-bold animate-pulse select-none align-baseline'
+                      aria-hidden='true'
+                    >
+                      ▍
+                    </span>
+                  )}
+                </div>
+              )}
+              {message.attributes.body &&
+                attachments.length > 0 &&
+                message.attributes.body !== 'Archivo adjunto' && (
+                  <div className='mt-1'>
+                    <MessageRichText
+                      content={message.attributes.body}
+                      isOwnMessage={isOwnMessage}
+                      isBot={isSenderBot}
+                    />
+                  </div>
+                )}
+            </>
+          )}
+
+          {/* Botones de acción dinámicos del bot / IA */}
+          {isSenderBot && !isOwnMessage && !isStreaming && actionButtons.length > 0 && (
+            <BotActionButtons
+              actions={actionButtons}
+              disabled={disableActions}
+              onActionClick={onActionClick}
+            />
           )}
 
           <div className='mt-1 flex items-center justify-end gap-1 text-[10px] leading-none'>
