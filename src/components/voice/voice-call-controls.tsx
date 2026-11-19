@@ -1,7 +1,19 @@
 'use client'
 
 import React, { useRef } from 'react'
-import { Camera, Loader2, Mic, MicOff, Minimize2, Monitor, PhoneOff, Send, ShieldCheck } from 'lucide-react'
+import {
+  Camera,
+  ImagePlus,
+  Loader2,
+  Mic,
+  MicOff,
+  Minimize2,
+  Monitor,
+  PhoneOff,
+  Send,
+  ShieldCheck,
+  WifiOff
+} from 'lucide-react'
 import { cn } from '../../ui'
 
 export interface VoiceCallControlsProps {
@@ -10,10 +22,14 @@ export interface VoiceCallControlsProps {
   userRms: number
   textInput: string
   isCapturingScreen?: boolean
+  isSimulatingMicroCut?: boolean
   onTextInputChange: (val: string) => void
   onSendTextPrompt: (e: React.FormEvent) => void
   onCaptureScreen?: () => void
+  onOpenCamera?: () => void
   onPhotoUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void
+  onTriggerFileUpload?: () => void
+  onSimulateMicroCut?: () => void
   onToggleMute?: () => void
   onHeroMicClick: () => void
   onRequestMicrophone?: () => void
@@ -27,10 +43,14 @@ export function VoiceCallControls({
   userRms,
   textInput,
   isCapturingScreen = false,
+  isSimulatingMicroCut = false,
   onTextInputChange,
   onSendTextPrompt,
   onCaptureScreen,
+  onOpenCamera,
   onPhotoUpload,
+  onTriggerFileUpload,
+  onSimulateMicroCut,
   onHeroMicClick,
   onMinimize,
   onHangup
@@ -47,9 +67,27 @@ export function VoiceCallControls({
       >
         <button
           type='button'
-          onClick={() => fileInputRef.current?.click()}
-          title='Subir foto de la terminal o error'
-          aria-label='Subir foto'
+          onClick={() =>
+            onTriggerFileUpload ? onTriggerFileUpload() : fileInputRef.current?.click()
+          }
+          title='Adjuntar imagen o foto desde tu equipo'
+          aria-label='Adjuntar imagen'
+          className='flex size-8 items-center justify-center rounded-xl text-neutral-500 hover:bg-neutral-100 hover:text-violet-600 transition-colors shrink-0 cursor-pointer'
+        >
+          <ImagePlus className='size-4' />
+        </button>
+
+        <button
+          type='button'
+          onClick={() =>
+            onOpenCamera
+              ? onOpenCamera()
+              : onTriggerFileUpload
+                ? onTriggerFileUpload()
+                : fileInputRef.current?.click()
+          }
+          title='Tomar Foto con cámara (Snap-to-Diagnose)'
+          aria-label='Tomar Foto'
           className='flex size-8 items-center justify-center rounded-xl text-neutral-500 hover:bg-neutral-100 hover:text-violet-600 transition-colors shrink-0 cursor-pointer'
         >
           <Camera className='size-4' />
@@ -59,8 +97,8 @@ export function VoiceCallControls({
           type='button'
           onClick={onCaptureScreen}
           disabled={isCapturingScreen}
-          title='Compartir captura de pantalla (Snap-to-Diagnose)'
-          aria-label='Compartir captura de pantalla'
+          title='Compartir Pantalla (Snap-to-Diagnose)'
+          aria-label='Compartir Pantalla'
           className='flex size-8 items-center justify-center rounded-xl text-neutral-500 hover:bg-neutral-100 hover:text-violet-600 transition-colors shrink-0 cursor-pointer disabled:opacity-50'
         >
           {isCapturingScreen ? (
@@ -69,6 +107,25 @@ export function VoiceCallControls({
             <Monitor className='size-4' />
           )}
         </button>
+
+        {onSimulateMicroCut && (
+          <button
+            type='button'
+            onClick={onSimulateMicroCut}
+            disabled={isSimulatingMicroCut}
+            title='Simular micro-corte de red (2s)'
+            aria-label='Test Micro-corte'
+            className={cn(
+              'flex items-center gap-1 h-8 px-2 rounded-xl text-[11px] font-medium transition-colors shrink-0 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed',
+              isSimulatingMicroCut
+                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                : 'text-neutral-500 hover:bg-amber-50 hover:text-amber-700'
+            )}
+          >
+            <WifiOff className={cn('size-3.5', isSimulatingMicroCut && 'animate-pulse')} />
+            <span>Micro-corte</span>
+          </button>
+        )}
 
         <input
           ref={fileInputRef}

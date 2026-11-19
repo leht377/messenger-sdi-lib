@@ -34,6 +34,7 @@ export function VoiceAudioVisualizerCard({
   onRequestMicrophone
 }: VoiceAudioVisualizerCardProps) {
   const isBlocked = hasPermission === false
+  const isReconnecting = callState === 'reconnecting'
   const isSpeaking = callState === 'speaking'
   const isThinkingOrTool =
     callState === 'thinking' ||
@@ -43,6 +44,8 @@ export function VoiceAudioVisualizerCard({
 
   const primaryTitle = isBlocked
     ? 'Micrófono bloqueado'
+    : isReconnecting
+    ? 'Estabilizando conexión de voz...'
     : isMuted
     ? 'Micrófono en silencio'
     : isSpeaking
@@ -55,6 +58,8 @@ export function VoiceAudioVisualizerCard({
 
   const secondarySubtitle = isBlocked
     ? 'Permiso requerido'
+    : isReconnecting
+    ? statusText || 'Reanudando sesión en caliente...'
     : isMuted
     ? 'Pulsa para reactivar'
     : isSpeaking || isThinkingOrTool

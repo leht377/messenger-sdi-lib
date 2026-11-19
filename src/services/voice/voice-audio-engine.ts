@@ -119,6 +119,17 @@ export class VoiceAudioEngine {
   public async initMicrophone(): Promise<void> {
     if (this.isDisposed) return
 
+    this.stopMicrophoneImmediate()
+
+    if (this.inputAudioCtx && this.inputAudioCtx.state !== 'closed') {
+      try {
+        await this.inputAudioCtx.close()
+      } catch {
+        // Ignorar
+      }
+      this.inputAudioCtx = null
+    }
+
     const AudioContextClass =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
@@ -152,14 +163,23 @@ export class VoiceAudioEngine {
       throw new Error('El navegador no soporta captura de micrófono.')
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      })
+    } catch (primaryErr: unknown) {
+      const errName = (primaryErr as { name?: string })?.name
+      if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+        throw primaryErr
       }
-    })
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    }
 
     if (this.isDisposed || !this.inputAudioCtx || this.inputAudioCtx.state === 'closed') {
       stream.getTracks().forEach((track) => track.stop())

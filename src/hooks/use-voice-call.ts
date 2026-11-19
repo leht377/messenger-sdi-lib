@@ -14,6 +14,63 @@ import type {
   VoiceTranscriptItem
 } from '../types/voice.types'
 
+const MAX_IMAGE_BYTES = 200 * 1024
+
+function estimateBase64Bytes(dataUrl: string): number {
+  const commaIdx = dataUrl.indexOf(',')
+  const b64 = commaIdx !== -1 ? dataUrl.slice(commaIdx + 1) : dataUrl
+  return Math.ceil((b64.length * 3) / 4)
+}
+
+function compressSourceToJpegUnder200KB(
+  source: HTMLVideoElement | HTMLImageElement,
+  sourceWidth: number,
+  sourceHeight: number
+): string {
+  const canvas = document.createElement('canvas')
+  const maxDim = 1024
+  let w = sourceWidth || 1280
+  let h = sourceHeight || 720
+  if (w > maxDim || h > maxDim) {
+    const ratio = Math.min(maxDim / w, maxDim / h)
+    w = Math.max(1, Math.round(w * ratio))
+    h = Math.max(1, Math.round(h * ratio))
+  }
+
+  const drawAndEncode = (targetW: number, targetH: number, quality: number): string => {
+    canvas.width = targetW
+    canvas.height = targetH
+    const ctx = canvas.getContext('2d')
+    ctx?.drawImage(source, 0, 0, targetW, targetH)
+    return canvas.toDataURL('image/jpeg', quality)
+  }
+
+  let dataUrl = drawAndEncode(w, h, 0.8)
+  if (estimateBase64Bytes(dataUrl) < MAX_IMAGE_BYTES) {
+    return dataUrl
+  }
+
+  for (const quality of [0.65, 0.5, 0.38]) {
+    dataUrl = drawAndEncode(w, h, quality)
+    if (estimateBase64Bytes(dataUrl) < MAX_IMAGE_BYTES) {
+      return dataUrl
+    }
+  }
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    w = Math.max(160, Math.round(w * 0.8))
+    h = Math.max(120, Math.round(h * 0.8))
+    for (const quality of [0.65, 0.5, 0.38]) {
+      dataUrl = drawAndEncode(w, h, quality)
+      if (estimateBase64Bytes(dataUrl) < MAX_IMAGE_BYTES) {
+        return dataUrl
+      }
+    }
+  }
+
+  return dataUrl
+}
+
 export interface UseVoiceCallOptions {
   open: boolean
   sessionId: string
@@ -57,15 +114,22 @@ export function useVoiceCall({
   const [matchedArticle, setMatchedArticle] = useState<VoiceMatchedArticle | null>(null)
   const [activeTool, setActiveTool] = useState<VoiceToolState | null>(null)
   const [noticeBanner, setNoticeBanner] = useState<string | null>(null)
+  const [reconnectingBanner, setReconnectingBanner] = useState<string | null>(null)
+  const [isSimulatingMicroCut, setIsSimulatingMicroCut] = useState(false)
   const [outcomeData, setOutcomeData] = useState<Record<string, unknown> | null>(null)
   const [outcomeType, setOutcomeType] = useState<string>('completed')
   const [finalizedData, setFinalizedData] = useState<VoiceFinalizedPayload | null>(null)
 
   const [isCapturingScreen, setIsCapturingScreen] = useState(false)
+  const [isCameraOpen, setIsCameraOpen] = useState(false)
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const [cameraFacingMode, setCameraFacingMode] = useState<'environment' | 'user'>('environment')
   const [textInput, setTextInput] = useState('')
   const [retryCounter, setRetryCounter] = useState(0)
 
   const clientRef = useRef<VoiceCallClient | null>(null)
+  const cameraStreamRef = useRef<MediaStream | null>(null)
   const statusRef = useRef<VoiceCallState>('idle')
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -118,6 +182,16 @@ export function useVoiceCall({
       clearInterval(timerRef.current)
       timerRef.current = null
     }
+  }, [])
+
+  const stopCameraStream = useCallback(() => {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((track) => track.stop())
+      cameraStreamRef.current = null
+    }
+    setCameraStream(null)
+    setCameraError(null)
+    setIsCameraOpen(false)
   }, [])
 
   const stopBotStreamPacer = useCallback((flushImmediately = false) => {
@@ -260,6 +334,7 @@ export function useVoiceCall({
 
       stopTimer()
       stopBotStreamPacer(false)
+      stopCameraStream()
       clientRef.current?.cleanup()
       clientRef.current = null
 
@@ -272,7 +347,7 @@ export function useVoiceCall({
       })
       onOpenChangeRef.current?.(false)
     },
-    [stopTimer, stopBotStreamPacer]
+    [stopTimer, stopBotStreamPacer, stopCameraStream]
   )
 
   useEffect(() => {
@@ -281,10 +356,13 @@ export function useVoiceCall({
       clientRef.current = null
       stopTimer()
       stopBotStreamPacer(false)
+      stopCameraStream()
       activeUserMessageIdRef.current = null
       turnFinishedRef.current = false
       setCallState('idle')
       setIsMinimized(false)
+      setReconnectingBanner(null)
+      setIsSimulatingMicroCut(false)
       setAnalyserNode(null)
       setOutputAnalyserNode(null)
       setUserRms(0)
@@ -299,12 +377,15 @@ export function useVoiceCall({
     setDurationSeconds(0)
     setTranscripts([])
     stopBotStreamPacer(false)
+    stopCameraStream()
     activeUserMessageIdRef.current = null
     turnFinishedRef.current = false
     setCallerContext(null)
     setMatchedArticle(null)
     setActiveTool(null)
     setNoticeBanner(null)
+    setReconnectingBanner(null)
+    setIsSimulatingMicroCut(false)
     setOutcomeData(null)
     outcomeDataRef.current = null
     setOutcomeType('completed')
@@ -328,16 +409,19 @@ export function useVoiceCall({
       },
       {
         onReady: (readyEvt) => {
+          setReconnectingBanner(null)
+          setIsSimulatingMicroCut(false)
           setCallState('listening')
           statusRef.current = 'listening'
           setStatusText('Te escucho... Habla con naturalidad.')
           if (readyEvt.caller_context) {
             setCallerContext(readyEvt.caller_context)
           }
-          stopTimer()
-          timerRef.current = setInterval(() => {
-            setDurationSeconds((prev) => prev + 1)
-          }, 1000)
+          if (!timerRef.current) {
+            timerRef.current = setInterval(() => {
+              setDurationSeconds((prev) => prev + 1)
+            }, 1000)
+          }
         },
         onCallerContext: (ctx) => {
           setCallerContext(ctx)
@@ -473,7 +557,22 @@ export function useVoiceCall({
           }
         },
         onImageReceived: (res) => {
-          showNotice(res.message || 'Captura analizada por el asistente')
+          const confirmText = 'Captura recibida y analizada por el asistente'
+          const timestamp = new Date().toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit'
+          })
+          setTranscripts((prev) => [
+            ...prev,
+            {
+              id: `bot-img-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              sender: 'assistant',
+              text: confirmText,
+              timestamp,
+              isFinal: true
+            }
+          ])
+          showNotice(res?.message || confirmText)
         },
         onGuideSent: () => {
           showNotice('Guía con pasos enviada al chat de Messenger', 5000)
@@ -528,19 +627,28 @@ export function useVoiceCall({
         },
         onReconnecting: (data) => {
           if (statusRef.current === 'ended') return
+          const msg = data?.message || 'Estabilizando conexión de voz...'
           setCallState('reconnecting')
           statusRef.current = 'reconnecting'
-          setStatusText(data?.message || 'Estabilizando conexión...')
+          setStatusText(msg)
+          setReconnectingBanner(msg)
         },
         onReconnected: (data) => {
           if (statusRef.current === 'ended') return
+          setIsSimulatingMicroCut(false)
+          setReconnectingBanner(null)
           setCallState('listening')
           statusRef.current = 'listening'
-          setStatusText(data?.message || 'Conexión restablecida. Puedes continuar.')
+          const msg = data?.message || 'Conexión restablecida. Puedes continuar hablando.'
+          setStatusText(msg)
+          showNotice(msg, 4500)
         },
         onFinalized: (payload) => {
           stopTimer()
           stopBotStreamPacer(true)
+          stopCameraStream()
+          setReconnectingBanner(null)
+          setIsSimulatingMicroCut(false)
           setFinalizedData(payload)
           if (payload.outcome) {
             setOutcomeType(payload.outcome)
@@ -567,6 +675,9 @@ export function useVoiceCall({
           if (statusRef.current !== 'ended') {
             stopTimer()
             stopBotStreamPacer(true)
+            stopCameraStream()
+            setReconnectingBanner(null)
+            setIsSimulatingMicroCut(false)
             setCallState('ended')
             statusRef.current = 'ended'
             setIsMinimized(false)
@@ -598,6 +709,7 @@ export function useVoiceCall({
       }
       stopTimer()
       stopBotStreamPacer(false)
+      stopCameraStream()
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current)
     }
   }, [
@@ -612,6 +724,7 @@ export function useVoiceCall({
     chatContext?.config?.apiBaseUrl,
     stopTimer,
     stopBotStreamPacer,
+    stopCameraStream,
     queueBotStreamText,
     showNotice
   ])
@@ -623,6 +736,10 @@ export function useVoiceCall({
   }, [isMuted])
 
   const requestMicrophone = useCallback(() => {
+    if (clientRef.current) {
+      void clientRef.current.retryMicrophone()
+      return
+    }
     setRetryCounter((prev) => prev + 1)
   }, [])
 
@@ -737,20 +854,11 @@ export function useVoiceCall({
       video.srcObject = displayStream
       await video.play()
 
-      const canvas = document.createElement('canvas')
-      const maxDim = 1024
-      let w = video.videoWidth || 1280
-      let h = video.videoHeight || 720
-      if (w > maxDim || h > maxDim) {
-        const ratio = Math.min(maxDim / w, maxDim / h)
-        w = Math.round(w * ratio)
-        h = Math.round(h * ratio)
-      }
-      canvas.width = w
-      canvas.height = h
-      const ctx = canvas.getContext('2d')
-      ctx?.drawImage(video, 0, 0, w, h)
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.82)
+      const dataUrl = compressSourceToJpegUnder200KB(
+        video,
+        video.videoWidth || 1280,
+        video.videoHeight || 720
+      )
 
       track.stop()
       displayStream.getTracks().forEach((t) => t.stop())
@@ -766,23 +874,137 @@ export function useVoiceCall({
     }
   }, [isCapturingScreen, showNotice])
 
+  const handleOpenCamera = useCallback(
+    async (overrideFacingMode?: 'environment' | 'user') => {
+      if (!clientRef.current) return
+      const targetFacingMode =
+        overrideFacingMode === 'user' || overrideFacingMode === 'environment'
+          ? overrideFacingMode
+          : cameraFacingMode
+      stopCameraStream()
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraError(
+          'Tu navegador no permite acceso directo a la cámara. Puedes subir una foto desde tu equipo.'
+        )
+        setIsCameraOpen(true)
+        return
+      }
+      try {
+        let stream: MediaStream
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: targetFacingMode },
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            },
+            audio: false
+          })
+        } catch (primaryErr: unknown) {
+          const primaryName = (primaryErr as { name?: string })?.name
+          if (primaryName === 'NotAllowedError' || primaryName === 'PermissionDeniedError') {
+            throw primaryErr
+          }
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        }
+        cameraStreamRef.current = stream
+        setCameraStream(stream)
+        setCameraError(null)
+        setIsCameraOpen(true)
+      } catch (err: unknown) {
+        const errName = (err as { name?: string })?.name
+        const message =
+          errName === 'NotAllowedError' || errName === 'PermissionDeniedError'
+            ? 'Permiso de cámara denegado en el navegador. Habilita la cámara o sube una foto desde tu equipo.'
+            : 'No se detectó cámara activa. Puedes subir una foto desde tu equipo.'
+        setCameraStream(null)
+        setCameraError(message)
+        setIsCameraOpen(true)
+        console.warn('[useVoiceCall] Error al abrir cámara:', err)
+      }
+    },
+    [cameraFacingMode, stopCameraStream]
+  )
+
+  const handleSwitchCamera = useCallback(() => {
+    const nextMode: 'environment' | 'user' =
+      cameraFacingMode === 'environment' ? 'user' : 'environment'
+    setCameraFacingMode(nextMode)
+    void handleOpenCamera(nextMode)
+  }, [cameraFacingMode, handleOpenCamera])
+
+  const handleCloseCamera = useCallback(() => {
+    stopCameraStream()
+  }, [stopCameraStream])
+
+  const handleCaptureCameraPreview = useCallback(
+    (videoEl: HTMLVideoElement | null): { dataUrl: string; sizeKb: number } | null => {
+      if (!videoEl) return null
+      const dataUrl = compressSourceToJpegUnder200KB(
+        videoEl,
+        videoEl.videoWidth || 1280,
+        videoEl.videoHeight || 720
+      )
+      const sizeKb = Math.max(1, Math.round(estimateBase64Bytes(dataUrl) / 1024))
+      return { dataUrl, sizeKb }
+    },
+    []
+  )
+
+  const handleSendCapturedDataUrl = useCallback(
+    (dataUrl: string) => {
+      if (!dataUrl || !clientRef.current) return
+      clientRef.current.sendImage(dataUrl, 'image/jpeg')
+      stopCameraStream()
+      showNotice('Foto enviada al asistente')
+    },
+    [stopCameraStream, showNotice]
+  )
+
+  const handleTakeCameraPhoto = useCallback(
+    (videoEl: HTMLVideoElement | null) => {
+      const captured = handleCaptureCameraPreview(videoEl)
+      if (!captured) return
+      handleSendCapturedDataUrl(captured.dataUrl)
+    },
+    [handleCaptureCameraPreview, handleSendCapturedDataUrl]
+  )
+
   const handlePhotoUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
       if (!file || !clientRef.current) return
       const reader = new FileReader()
       reader.onload = (event) => {
-        const dataUrl = event.target?.result as string
-        if (dataUrl && clientRef.current) {
-          clientRef.current.sendImage(dataUrl, file.type || 'image/jpeg')
+        const rawDataUrl = event.target?.result as string
+        if (!rawDataUrl || !clientRef.current) return
+        const img = new Image()
+        img.onload = () => {
+          if (!clientRef.current) return
+          const compressedDataUrl = compressSourceToJpegUnder200KB(
+            img,
+            img.naturalWidth || img.width || 1280,
+            img.naturalHeight || img.height || 720
+          )
+          clientRef.current.sendImage(compressedDataUrl, 'image/jpeg')
+          stopCameraStream()
           showNotice('Foto enviada al asistente')
         }
+        img.src = rawDataUrl
       }
       reader.readAsDataURL(file)
       e.target.value = ''
     },
-    [showNotice]
+    [stopCameraStream, showNotice]
   )
+
+  const handleSimulateMicroCut = useCallback(() => {
+    if (!clientRef.current || statusRef.current === 'ended' || statusRef.current === 'connecting') {
+      return
+    }
+    setIsSimulatingMicroCut(true)
+    clientRef.current.simulateMicroCut(2000)
+  }, [])
 
   const formattedDuration = useMemo(() => {
     const mins = Math.floor(durationSeconds / 60)
@@ -843,10 +1065,16 @@ export function useVoiceCall({
     matchedArticle,
     activeTool,
     noticeBanner,
+    reconnectingBanner,
+    isSimulatingMicroCut,
     outcomeType,
     outcomeData,
     finalizedData,
     isCapturingScreen,
+    isCameraOpen,
+    cameraStream,
+    cameraError,
+    cameraFacingMode,
     textInput,
     setTextInput,
     handleToggleMute,
@@ -856,7 +1084,14 @@ export function useVoiceCall({
     handleDialogCloseAttempt,
     handleSendTextPrompt,
     handleCaptureScreen,
+    handleOpenCamera,
+    handleSwitchCamera,
+    handleCaptureCameraPreview,
+    handleSendCapturedDataUrl,
+    handleTakeCameraPhoto,
+    handleCloseCamera,
     handlePhotoUpload,
+    handleSimulateMicroCut,
     requestMicrophone
   }
 }

@@ -18,9 +18,14 @@ export class VoiceCallClient {
   private ws: WebSocket | null = null
   private audioEngine: VoiceAudioEngine
   private connected: boolean = false
+  private wasEverConnected: boolean = false
   private isDisposed: boolean = false
+  private isCallFinalized: boolean = false
+  private isSimulatingMicroCut: boolean = false
   private levelIntervalId: ReturnType<typeof setInterval> | null = null
   private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null
+  private microCutTimerId: ReturnType<typeof setTimeout> | null = null
+  private reconnectTimerId: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     private config: VoiceConnectionParams,
@@ -31,7 +36,7 @@ export class VoiceCallClient {
       onAnalyserReady: options.onAnalyserReady,
       onOutputAnalyserReady: options.onOutputAnalyserReady,
       onPcmChunk: (buffer) => {
-        if (this.connected && this.ws?.readyState === WebSocket.OPEN) {
+        if (this.connected && !this.isSimulatingMicroCut && this.ws?.readyState === WebSocket.OPEN) {
           this.ws.send(buffer)
         }
       }
@@ -52,6 +57,9 @@ export class VoiceCallClient {
 
   public async start(): Promise<void> {
     this.isDisposed = false
+    this.isCallFinalized = false
+    this.wasEverConnected = false
+    this.isSimulatingMicroCut = false
     const url = buildVoiceWebSocketUrl(this.config)
 
     // 1. Inicializar contexto de salida (24,000 Hz) dentro del gesto del usuario
@@ -62,20 +70,17 @@ export class VoiceCallClient {
     }
 
     // 2. Inicializar captura de micrófono (16,000 Hz Mono Int16)
+    // Si no hay permiso o no se detecta micrófono, notificamos el estado pero permitimos conectar la llamada
+    // (audio del asistente, texto, adjuntos, pantalla compartida y reintento en caliente siguen operativos).
     try {
       await this.audioEngine.initMicrophone()
-      this.callbacks.onPermissionChange?.(true)
+      if (!this.isDisposed) {
+        this.callbacks.onPermissionChange?.(true)
+      }
     } catch (err: unknown) {
       if (this.isDisposed) return
-      const errName = (err as { name?: string })?.name
-      const isDenied = errName === 'NotAllowedError' || errName === 'PermissionDeniedError'
-      const userMessage = isDenied
-        ? 'Permiso de micrófono denegado. Por favor habilita el acceso al micrófono en tu navegador.'
-        : `Error al acceder al micrófono: ${err instanceof Error ? err.message : String(err)}`
-
+      const userMessage = this.formatMicrophoneError(err)
       this.callbacks.onPermissionChange?.(false, userMessage)
-      this.callbacks.onError?.(new Error(userMessage))
-      return
     }
 
     if (this.isDisposed) {
@@ -83,20 +88,55 @@ export class VoiceCallClient {
       return
     }
 
-    // 3. Conectar WebSocket con el Gateway de Voz con reintento automático si el gateway tarda en responder
+    // 3. Conectar WebSocket con el Gateway de Voz con reintento automático si el gateway tarda en responder o sufre micro-cortes
     let connectAttempts = 0
-    const maxConnectRetries = 2
+    const maxConnectRetries = 3
 
     const connectWs = () => {
-      if (this.isDisposed) return
+      if (this.isDisposed || this.isCallFinalized) return
 
       const ws = new WebSocket(url)
       this.ws = ws
       ws.binaryType = 'arraybuffer'
 
+      const scheduleReconnect = (): boolean => {
+        if (this.isDisposed || this.isCallFinalized) return false
+        if (this.reconnectTimerId) return true
+        if (connectAttempts >= maxConnectRetries) return false
+
+        this.connected = false
+        if (this.heartbeatIntervalId) {
+          clearInterval(this.heartbeatIntervalId)
+          this.heartbeatIntervalId = null
+        }
+
+        connectAttempts++
+        this.callbacks.onReconnecting?.({
+          message: 'Estabilizando conexión de voz...'
+        })
+
+        this.reconnectTimerId = setTimeout(() => {
+          this.reconnectTimerId = null
+          if (!this.isDisposed && !this.isCallFinalized) {
+            connectWs()
+          }
+        }, 1500)
+
+        return true
+      }
+
       ws.onopen = () => {
+        if (this.ws !== ws) return
+        const isReconnection = this.wasEverConnected
         this.connected = true
+        this.wasEverConnected = true
         connectAttempts = 0
+
+        if (this.reconnectTimerId) {
+          clearTimeout(this.reconnectTimerId)
+          this.reconnectTimerId = null
+        }
+
         if (this.heartbeatIntervalId) {
           clearInterval(this.heartbeatIntervalId)
         }
@@ -106,6 +146,12 @@ export class VoiceCallClient {
             this.ws.send(JSON.stringify({ type: 'ping' }))
           }
         }, 20000)
+
+        if (isReconnection) {
+          this.callbacks.onReconnected?.({
+            message: 'Conexión restablecida. Puedes continuar hablando.'
+          })
+        }
       }
 
       ws.onmessage = (event: MessageEvent) => {
@@ -122,23 +168,16 @@ export class VoiceCallClient {
       }
 
       ws.onerror = () => {
-        if (!this.connected && connectAttempts < maxConnectRetries && !this.isDisposed) {
-          connectAttempts++
-          this.callbacks.onReconnecting?.({
-            message: `Reintentando conexión con el gateway de voz (intento ${connectAttempts}/${maxConnectRetries})...`
-          })
-          setTimeout(() => {
-            if (!this.isDisposed && !this.connected) {
-              connectWs()
-            }
-          }, 1500)
+        if (this.ws !== ws) return
+        if (scheduleReconnect()) {
           return
         }
         this.callbacks.onError?.(new Error('Error de conexión con el servidor de voz.'))
       }
 
       ws.onclose = () => {
-        if (!this.connected && connectAttempts < maxConnectRetries && !this.isDisposed) {
+        if (this.ws !== ws) return
+        if (scheduleReconnect()) {
           return
         }
         this.connected = false
@@ -225,6 +264,7 @@ export class VoiceCallClient {
           })
         break
       case 'call.finalized':
+        this.isCallFinalized = true
         this.callbacks.onFinalized?.(event as any)
         break
       case 'call.timeout':
@@ -314,9 +354,61 @@ export class VoiceCallClient {
     this.cleanup()
   }
 
+  private formatMicrophoneError(err: unknown): string {
+    const errName = (err as { name?: string })?.name
+    const isDenied = errName === 'NotAllowedError' || errName === 'PermissionDeniedError'
+    return isDenied
+      ? 'Permiso de micrófono denegado. Por favor habilita el acceso al micrófono en tu navegador.'
+      : `Error al acceder al micrófono: ${err instanceof Error ? err.message : String(err)}`
+  }
+
+  public async retryMicrophone(): Promise<boolean> {
+    if (this.isDisposed) return false
+    try {
+      await this.audioEngine.initMicrophone()
+      if (this.isDisposed) return false
+      this.callbacks.onPermissionChange?.(true)
+      return true
+    } catch (err: unknown) {
+      if (this.isDisposed) return false
+      const userMessage = this.formatMicrophoneError(err)
+      this.callbacks.onPermissionChange?.(false, userMessage)
+      return false
+    }
+  }
+
+  /**
+   * Simula un micro-corte de red temporal (p.ej. 2s) pausando tramas PCM
+   * y emitiendo la secuencia session.reconnecting -> session.reconnected
+   * sin cortar AudioEngine ni finalizar la sesión.
+   */
+  public simulateMicroCut(durationMs: number = 2000): void {
+    if (this.isDisposed || this.isCallFinalized || this.isSimulatingMicroCut) return
+    this.isSimulatingMicroCut = true
+
+    this.handleJsonEvent({
+      type: 'session.reconnecting',
+      message: 'Estabilizando conexión de voz...'
+    })
+
+    this.microCutTimerId = setTimeout(() => {
+      this.microCutTimerId = null
+      if (this.isDisposed || this.isCallFinalized) {
+        this.isSimulatingMicroCut = false
+        return
+      }
+      this.isSimulatingMicroCut = false
+      this.handleJsonEvent({
+        type: 'session.reconnected',
+        message: 'Conexión restablecida. Puedes continuar hablando.'
+      })
+    }, durationMs)
+  }
+
   public cleanup(): void {
     this.isDisposed = true
     this.connected = false
+    this.isSimulatingMicroCut = false
 
     if (this.levelIntervalId) {
       clearInterval(this.levelIntervalId)
@@ -326,6 +418,14 @@ export class VoiceCallClient {
       clearInterval(this.heartbeatIntervalId)
       this.heartbeatIntervalId = null
     }
+    if (this.microCutTimerId) {
+      clearTimeout(this.microCutTimerId)
+      this.microCutTimerId = null
+    }
+    if (this.reconnectTimerId) {
+      clearTimeout(this.reconnectTimerId)
+      this.reconnectTimerId = null
+    }
 
     this.audioEngine.dispose()
 
@@ -333,8 +433,9 @@ export class VoiceCallClient {
       this.ws &&
       (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
     ) {
-      this.ws.close()
+      const socketToClose = this.ws
       this.ws = null
+      socketToClose.close()
     }
   }
 }
